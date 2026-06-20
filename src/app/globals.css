@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+:root {
+  --font-geist: "Geist", sans-serif;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Thin custom scrollbar for textarea */
+textarea {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(64 64 64) transparent;
+}
+textarea::-webkit-scrollbar {
+  width: 4px;
+}
+textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+textarea::-webkit-scrollbar-thumb {
+  background-color: rgb(64 64 64);
+  border-radius: 2px;
+}
