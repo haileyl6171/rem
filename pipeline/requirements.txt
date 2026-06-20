@@ -1,0 +1,18 @@
+# Python deps for the Modal pipeline image.
+# Pin versions before the demo once things work.
+
+modal                 # orchestration + GPU hosting + the trigger endpoint
+supabase              # DB writes (db.py) + Storage I/O (storage.py)
+anthropic             # steps/make_prompt.py — journal → video prompt
+requests              # steps/generate_video.py — call the Pika API
+fastapi               # required by @modal.fastapi_endpoint
+
+# --- reconstruction (P4) ---
+# gsplat needs a CUDA build toolchain — see the image note in app.py.
+# Add the trainer you choose, e.g.:
+# gsplat
+# torch
+# numpy
+# opencv-python-headless     # frame I/O / image handling
+#
+# COLMAP itself is installed via apt in app.py, not pip.
