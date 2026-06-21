@@ -21,6 +21,7 @@ import db
 import media
 import storage
 from agents import fix_look
+from agents import music
 from steps.compose_scene import compose_scene
 from steps.generate_video import generate_video
 from steps.extract_frames import extract_frames
@@ -90,7 +91,16 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
                 prompt, photo_paths, out_path=f"{work}/generated.mp4"
             )
 
-        frames_dir = extract_frames(video_path, frames_dir=f"{work}/frames")  # all frames
+        # Optional: an LLM picks scene-appropriate music (Pika MCP) and lays it
+        # under the clip. No-op unless Pika MCP is enabled. (COLMAP uses frames,
+        # so audio doesn't affect reconstruction — this scores the memory video.)
+        scored = music.score_video(
+            video_path, description, analysis, prompt, out_path=f"{work}/scored.mp4"
+        )
+        if scored:
+            video_path = scored
+
+        frames_dir = extract_frames(video_path, frames_dir=f"{work}/frames")
 
         # ---- RECONSTRUCT: frames → COLMAP poses ---------------------------
         #  GPU SIFT matching runs headless on a CUDA colmap build; high_quality

@@ -98,7 +98,21 @@ def main() -> int:
     print(f"\n→ Rendering with Veo 3 → {video_path} (this can take a few minutes)...")
     generate_video(prompt, images, out_path=video_path)
     print(f"✓ Video saved: {video_path}")
-    _open(video_path)  # pop it open so you can watch the AI video before any splatting
+
+    # Optional: let the Music Supervisor agent choose + lay music under the clip.
+    from agents import music
+
+    if music.is_enabled():
+        print("→ Choosing scene-appropriate music (Pika MCP) + scoring the clip...")
+        scored_path = str(OUT_DIR / "generated_scored.mp4")
+        scored = music.score_video(video_path, description, analysis, prompt=prompt, out_path=scored_path)
+        if scored:
+            print(f"✓ Scored video: {scored}")
+            video_path = scored
+        else:
+            print("  (music scoring skipped/unavailable)")
+
+    _open(video_path)  # pop it open so you can watch (and hear) the AI video
 
     try:
         from steps.extract_frames import extract_frames
