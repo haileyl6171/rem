@@ -795,7 +795,7 @@ export default function IngestScreen({
           <p className="text-[8px] tracking-[0.3em] text-[#6A6258] uppercase">
             Powered by 3D Gaussian Splatting
           </p>
-          <h1 className="font-serif text-2xl text-[#C8B89A]">rem</h1>
+          <h1 className="font-serif text-2xl text-[#6A5D4F]">rem</h1>
         </div>
       </div>
 
