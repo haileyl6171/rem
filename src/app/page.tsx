@@ -49,9 +49,25 @@ export default function Home() {
 
   // Submit the form → run the scripted reconstruction, then reveal the scene.
   const handleGenerate = useCallback(
-    (description: string) => {
+    (description: string, imageFiles: File[], videoFile: File | null) => {
       const memory = buildDemoMemory(description, createdCount.current++);
       transitionTo("loading", () => setPending(memory));
+
+      const form = new FormData();
+      form.append("description", description);
+      imageFiles.forEach((file) => form.append("photos", file));
+      if (videoFile) form.append("video", videoFile);
+
+      fetch("/api/memories", { method: "POST", body: form })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            console.warn("[create memory] non-OK response:", res.status, body);
+          } else {
+            console.info("[create memory] created:", body.id);
+          }
+        })
+        .catch((err) => console.error("[create memory] request failed:", err));
     },
     [transitionTo],
   );
