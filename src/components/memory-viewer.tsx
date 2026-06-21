@@ -51,6 +51,14 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
 
         viewerRef.current = viewer;
 
+        const v = viewer as any;
+        for (const ctrl of [v.perspectiveControls, v.orthographicControls]) {
+          if (ctrl) {
+            ctrl.panSpeed = 3.0;
+            ctrl.keyPanSpeed = 40.0;
+          }
+        }
+
         const splatUrl = src || "/bonsai.splat";
 
         await viewer.addSplatScene(splatUrl, {
