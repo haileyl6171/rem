@@ -233,7 +233,7 @@ function SplatPreview({ url, targetPosition, visible }: SplatPreviewProps) {
   return (
     <group ref={outerRef}>
       <group ref={spinRef}>
-        <group ref={innerRef} rotation={[Math.PI / 2, 0, 0]} />
+        <group ref={innerRef} rotation={[-Math.PI / 2, 0, 0]} />
       </group>
     </group>
   );
@@ -787,7 +787,7 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
           position={[
             hoverTarget.position[0],
             hoverTarget.position[1],
-            hoverTarget.position[2] + TILE_DEPTH / 2 + 0.015,
+            hoverTarget.position[2] + TILE_DEPTH / 2 + 0.12,
           ]}
           renderOrder={-1}
         >
@@ -815,7 +815,7 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
               ? [
                   hoverTarget.position[0],
                   hoverTarget.position[1],
-                  hoverTarget.position[2] + TILE_DEPTH / 2 + 0.02,
+                  hoverTarget.position[2] + TILE_DEPTH / 2 + 0.15,
                 ]
               : [0, 0, -1]
           }
