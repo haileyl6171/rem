@@ -33,12 +33,29 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# python (pipeline)
+__pycache__/
+*.py[cod]
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# vendor: gsplat is tracked as a git submodule (see .gitmodules).
+# Ignore anything else dropped into vendor/, but keep the submodule itself.
+vendor/*
+!vendor/gsplat
+
+# python (pipeline)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+pipeline/third_party
 
 # local editor settings
 .claude/

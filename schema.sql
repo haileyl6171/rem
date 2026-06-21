@@ -26,7 +26,19 @@ create table if not exists memories (
   error       text,                            -- human-readable; set only on FAILED
 
   -- result (null until the pipeline finishes)
-  splat_url   text,                       -- public HTTPS URL of scene.splat in Storage
+  splat_url   text,                       -- public HTTPS URL of scene.ply in Storage
+
+  -- one-time vision read (written ONCE, right after the user's photos arrive)
+  -- structured description of what the uploaded photos literally show. Computed
+  -- a single time by Gemini (multimodal) and cached here, so we never re-send
+  -- the images on retries or for later coherence reads. See pipeline/agents/vision.py.
+  vision      jsonb,
+
+  -- coherence layer (written by the compose_scene agent before generation)
+  -- cached, structured read of THIS memory's scene — recurring people, places,
+  -- palette, lighting, motifs — so future memories can be made coherent with it
+  -- WITHOUT re-analyzing the (discarded) video. See pipeline/agents/.
+  analysis    jsonb,
 
   created_at  timestamptz  default now(),
   updated_at  timestamptz  default now()
@@ -34,6 +46,10 @@ create table if not exists memories (
 
 -- The gallery / list endpoint orders by created_at desc — index it.
 create index if not exists idx_memories_created_at on memories (created_at desc);
+
+-- Idempotent migration: add the coherence columns to an already-created table.
+alter table memories add column if not exists vision   jsonb;
+alter table memories add column if not exists analysis jsonb;
 
 -- Keep updated_at fresh on every write (nice for debugging / sorting).
 create or replace function set_updated_at() returns trigger as $$

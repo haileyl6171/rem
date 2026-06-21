@@ -1,19 +1,15 @@
 # ============================================================================
-#  STEP 1 — journal text → a video-generation prompt.   [P3]
-#  The ONLY "AI text" call in the core pipeline. Not an agent: one API call.
+#  STEP 1 (legacy) — journal text → a video-generation prompt.   [P3]
+#  Superseded by steps/compose_scene.py (the agentic, persona-coherent version
+#  the pipeline actually runs). Kept as the simple one-shot fallback; it now
+#  delegates to the shared Gemini client so there's a single LLM dependency.
 #
 #  Goal: turn a freeform journal entry into a prompt that makes Pika produce
 #  footage that reconstructs well (slow camera motion, consistent geometry,
 #  parallax — NOT fast cuts or wild motion).
 # ============================================================================
 
-import os
-from anthropic import Anthropic  # pip: anthropic
-
-_client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-
-# Model per the claude-api guidance: default to claude-opus-4-8.
-_MODEL = "claude-opus-4-8"
+from agents.client import complete_text
 
 _SYSTEM = (
     "You convert a personal journal entry into a single, vivid prompt for a "
@@ -29,12 +25,4 @@ def make_prompt(description: str) -> str:
     """description -> a single video-generation prompt string."""
     if not description.strip():
         description = "a quiet, memorable place"
-
-    resp = _client.messages.create(
-        model=_MODEL,
-        max_tokens=1024,
-        system=_SYSTEM,
-        messages=[{"role": "user", "content": description}],
-    )
-    # resp.content is a list of blocks; grab the text.
-    return "".join(b.text for b in resp.content if b.type == "text").strip()
+    return complete_text(_SYSTEM, description, max_tokens=1024)
