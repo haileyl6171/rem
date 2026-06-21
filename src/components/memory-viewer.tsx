@@ -181,7 +181,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {/* Subtle branding */}
       <div className="absolute bottom-8 left-8 pointer-events-none">
         <span className="text-2xl font-serif text-[#F7F5F0]/50">
-          Rem
+          rem
         </span>
       </div>
     </div>
