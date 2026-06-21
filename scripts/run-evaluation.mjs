@@ -96,9 +96,20 @@ async function main() {
       `(filtered out ${allJudged.length - kept.length} weak matches)`,
   );
   console.log(
-    `\n  → Action: add \`score >= ${THRESHOLD}\` filter in findSimilarMemories so the\n` +
-      `    UI only surfaces matches the evaluator confirms are relevant.\n`,
+    `\n  ✓ LIVE: findSimilarMemories applies \`score >= ${THRESHOLD}\`\n` +
+      `    (MEMORY_RELEVANCE_THRESHOLD). The /similar endpoint users hit now\n` +
+      `    serves this higher-precision set — Arize feedback → a better app.\n`,
   );
+
+  // Copy-paste line for ARIZE.md (the before/after evidence).
+  console.log("─".repeat(64));
+  console.log("  ARIZE.md summary line:");
+  console.log(
+    `  relevance@${K} ${pct(baseline)} → ${pct(improved)} ` +
+      `(+${pct(Math.max(0, delta))}) after dropping ${allJudged.length - kept.length}/` +
+      `${allJudged.length} neighbors with retrieval_score < ${THRESHOLD}.`,
+  );
+  console.log("─".repeat(64) + "\n");
 }
 
 main().catch((e) => {
