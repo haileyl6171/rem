@@ -52,3 +52,9 @@ __pycache__/
 venv/
 
 pipeline/third_party
+
+# local editor settings
+.claude/
+
+# generated per-memory scene splats (build artifacts, not source)
+public/scenes/

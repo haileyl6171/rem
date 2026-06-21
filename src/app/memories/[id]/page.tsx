@@ -58,7 +58,7 @@ export default function MemoryPage() {
 
   // ----- render by status -----
   if (error) return <ErrorView message={error} />;
-  if (!memory) return <LoadingScreen description="loading…" />;
+  if (!memory) return <LoadingScreen description="loading…" onComplete={() => {}} />;
 
   if (memory.status === "FAILED") {
     return <ErrorView message={memory.error ?? "generation failed"} />;
@@ -75,6 +75,7 @@ export default function MemoryPage() {
   return (
     <LoadingScreen
       description={memory.description ?? ""}
+      onComplete={() => {}}
       // status={memory.status}
       // progress={memory.progress}
     />
