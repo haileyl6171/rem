@@ -48,6 +48,9 @@ def main() -> None:
                     help="incremental (robust default) | global (GLOMAP, ~10-50x faster; needs COLMAP 4.x)")
     ap.add_argument("--no-gpu-colmap", action="store_true",
                     help="force CPU SIFT (GPU SIFT otherwise runs headless on a CUDA colmap build)")
+    ap.add_argument("--colmap-bin", default="colmap",
+                    help="path to the colmap binary, e.g. ~/.conda/envs/colmap4/bin/colmap "
+                         "to use a 4.x build (global_mapper) while running gsplat from this env")
     args = ap.parse_args()
 
     log = logging.getLogger("reconstruct")
@@ -72,7 +75,8 @@ def main() -> None:
     log.info("[2/4] COLMAP (matcher=%s) …", matcher)
     colmap_dir = run_colmap(frames_dir, os.path.join(out, "colmap"),
                             matcher=matcher, sfm=args.sfm,
-                            sift_use_gpu=not args.no_gpu_colmap)
+                            sift_use_gpu=not args.no_gpu_colmap,
+                            colmap_bin=os.path.expanduser(args.colmap_bin))
 
     log.info("[3/4] gsplat training (%d steps) …", args.max_steps)
     ply = train_gsplat(frames_dir, colmap_dir, os.path.join(out, "gsplat"),
