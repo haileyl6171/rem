@@ -3,6 +3,7 @@
 #  Plain ffmpeg. Only used for VIDEO input; image-set input skips this.
 # ============================================================================
 
+import glob
 import logging
 import os
 import subprocess
@@ -28,6 +29,9 @@ def extract_frames(video_path: str, frames_dir: str, fps: int | None = None) -> 
     matchable SIFT features).
     """
     os.makedirs(frames_dir, exist_ok=True)  # ffmpeg won't create this itself
+    for stale in glob.glob(os.path.join(frames_dir, "*")):   # clear a previous run's frames
+        if stale.lower().endswith(_IMG_EXT):                 # (old naming/fps) so they don't mix in
+            os.remove(stale)
     cmd = ["ffmpeg", "-y", "-i", video_path]
     if fps:
         cmd += ["-vf", f"fps={fps}"]

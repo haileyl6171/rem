@@ -94,6 +94,11 @@ def run_colmap(
     inp = os.path.join(src, "input")
     distorted = os.path.join(src, "distorted")
     db = os.path.join(distorted, "database.db")
+    # Start clean: stale frames + database from a previous run in the SAME work_dir
+    # cause "IMAGE_EXISTS" skips, mixed cameras (#2, #3, ...), and contaminated models.
+    for stale in (inp, distorted, os.path.join(src, "images"), os.path.join(src, "sparse")):
+        if os.path.exists(stale):
+            shutil.rmtree(stale)
     os.makedirs(inp, exist_ok=True)
     os.makedirs(distorted, exist_ok=True)
 
