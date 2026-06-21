@@ -2,7 +2,7 @@
 
 import { Suspense, useState, useCallback } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Float } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { EffectComposer, N8AO } from "@react-three/postprocessing";
 import * as THREE from "three";
 import GridScene from "./memory-grid";
@@ -72,14 +72,24 @@ export default function IngestScreen({
         <directionalLight position={[0, -4, -2]} intensity={0.15} color="#C0D0E0" />
 
         <Suspense fallback={null}>
-          <Float speed={0.6} rotationIntensity={0.015} floatIntensity={0.1}>
-            <GridScene
-              memories={memories}
-              onNewMemoryClick={handleNewMemory}
-              onMemoryClick={onMemoryClick}
-            />
-          </Float>
+          <GridScene
+            memories={memories}
+            onNewMemoryClick={handleNewMemory}
+            onMemoryClick={onMemoryClick}
+          />
         </Suspense>
+
+        <OrbitControls
+          enableDamping
+          dampingFactor={0.12}
+          rotateSpeed={0.8}
+          zoomSpeed={0.9}
+          panSpeed={0.8}
+          minDistance={2}
+          maxDistance={8}
+          minPolarAngle={0.2}
+          maxPolarAngle={Math.PI * 0.75}
+        />
 
         <EffectComposer>
           <N8AO aoRadius={0.4} intensity={3.5} distanceFalloff={0.3} />
