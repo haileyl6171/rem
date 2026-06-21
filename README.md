@@ -3,8 +3,12 @@
 Write down a moment (and drop a photo or video), and Rem turns it into a 3D
 Gaussian-splat scene you can walk through. Built at the Berkeley AI Hackathon.
 
-Text/photo → AI video (Pika) → frames → COLMAP → gaussian-splat training →
-a `scene.ply` you explore in the browser.
+Two input modalities, same 3D output:
+- **Text / photo** → creative vision (Pika) → AI video (Veo 3) →
+- **Video** → re-graded to the memory's look (Pika fix-my-look; palette/lighting/mood
+  changed, original geometry + camera motion preserved, so it stays COLMAP-friendly) →
+
+…then → frames → COLMAP → gaussian-splat training → a `scene.ply` you explore in the browser.
 
 ---
 
@@ -75,8 +79,8 @@ hack-berkeley/
 │   ├── storage.py                    🟥 download inputs / upload scene.ply     [P3]
 │   ├── requirements.txt              🟥 python deps for the image              [P3]
 │   └── steps/
-│       ├── make_prompt.py            🟥 journal → video prompt (Claude)        [P3]
-│       ├── generate_video.py         🟥 Pika: prompt → video                   [P3]
+│       ├── make_prompt.py            🟥 journal → video prompt (Gemini)        [P3]
+│       ├── generate_video.py         🟥 Veo 3: creative prompt → video         [P3]
 │       ├── extract_frames.py         🟥 ffmpeg: video → frames                 [P3]
 │       ├── colmap.py                 🟥 frames → camera poses                  [P4]
 │       ├── train_gsplat.py           🟥 poses → trained gaussians              [P4]
@@ -165,7 +169,12 @@ cp .env.example .env.local           # fill in the NEXT.JS section
 # set the PIPELINE values as a Modal secret:
 modal secret create rem-secrets \
   SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
-  ANTHROPIC_API_KEY=... PIKA_API_KEY=... MODAL_SECRET=...
+  GEMINI_API_KEY=... MODAL_SECRET=...
+# creative vision (Pika MCP, OAuth-only):
+#   1) once, locally:  cd pipeline && python -m agents.pika_auth authorize   (browser)
+#   2) ship the token file to Modal (PIKA_MCP_TOKEN_PATH) or set PIKA_MCP_REFRESH_TOKEN,
+#      then enable with  PIKA_MCP_ENABLED=1   (silent refresh thereafter)
+# video generation (Veo 3): add  VEO_ENABLED=1   (reuses GEMINI_API_KEY)
 ```
 
 ### 4. Run
@@ -207,7 +216,8 @@ drop-in change.
 - **Big files → Storage, never the DB.** The DB stores the `splat_url` string;
   the browser downloads the file straight from Storage.
 - **AI scope:** the core pipeline is a plain sequential script, not an agent.
-  The only AI calls are Pika (video) and one Claude call (`make_prompt`). An
+  The AI calls are Pika (creative vision, agent-side via pika-mcp), Veo 3
+  (video), and Gemini (the persona/agent layer + `make_prompt`). An
   agentic "check the video and retry" loop is a *stretch goal*, not scaffolding.
 - **Existing prototype:** `src/app/page.tsx` currently fakes the loading→viewer
   flow in memory. The real flow is: ingest → `POST /api/memories` →

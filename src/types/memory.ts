@@ -20,6 +20,37 @@ export type MemoryStatus =
 export const TERMINAL_STATUSES: MemoryStatus[] = ["READY", "FAILED"];
 
 /**
+ * Structured read of a memory's scene, produced by the compose_scene agent
+ * before generation and cached on the row. Drives cross-memory coherence.
+ * (Mirror of the `memories.analysis` jsonb column.)
+ */
+export interface SceneAnalysis {
+  people: string[]; // recurring people named/implied in the scene
+  places: string[]; // settings — "grandma's kitchen", "the lake dock"
+  objects: string[]; // recurring props/subjects in frame
+  palette: string[]; // dominant colors/tones
+  lighting: string | null; // "golden-hour window light", "overcast"
+  mood: string | null; // emotional register of the scene
+  motifs: string[]; // recurring visual ideas
+}
+
+/**
+ * One-time read of the user's UPLOADED PHOTOS, produced by Claude the first time
+ * a memory's images arrive and cached on the row. Distinct from SceneAnalysis:
+ * this is what the photos literally show, computed once and never recomputed.
+ * (Mirror of the `memories.vision` jsonb column.)
+ */
+export interface PhotoAnalysis {
+  summary: string; // 1–2 sentences: what the photos literally show
+  people: string[]; // people visible in the photos
+  places: string[]; // settings visible in the photos
+  objects: string[]; // notable objects/subjects in frame
+  palette: string[]; // dominant colors/tones
+  lighting: string | null; // observed lighting
+  mood: string | null; // emotional register
+}
+
+/**
  * A memory row, exactly as the GET endpoints return it.
  * (Mirror of the `memories` table.)
  */
@@ -31,6 +62,8 @@ export interface Memory {
   progress: number; // 0–100
   error: string | null;
   splat_url: string | null; // null until status === "READY"
+  vision: PhotoAnalysis | null; // null until photos are analyzed once
+  analysis: SceneAnalysis | null; // null until compose_scene runs
   created_at: string;
   updated_at: string;
 }
