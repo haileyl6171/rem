@@ -663,11 +663,8 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
     return result;
   }, [memories]);
 
-  useFrame((state) => {
+  useFrame(() => {
     if (!groupRef.current) return;
-    const t = state.clock.elapsedTime;
-    groupRef.current.rotation.z = Math.sin(t * 0.12) * 0.01;
-    groupRef.current.position.y = GRID_CENTER[1] + Math.sin(t * 0.25) * 0.025;
   });
 
   return (
