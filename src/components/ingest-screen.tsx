@@ -2,7 +2,7 @@
 
 import { Suspense, useRef, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, ThreeEvent } from "@react-three/fiber";
-import { Float, Edges } from "@react-three/drei";
+import { Float } from "@react-three/drei";
 import {
   EffectComposer,
   N8AO,
@@ -39,15 +39,15 @@ const TILE_DEPTH = 0.06;
 const TILE_DEPTH_EMPTY = 0.03;
 
 const PLACEHOLDER_PALETTES = [
-  { base: "#3D3A38", accent: "#5A5550" },
-  { base: "#9B8A55", accent: "#BBA86A" },
-  { base: "#4A6878", accent: "#6A90A8" },
-  { base: "#904A4A", accent: "#B86868" },
-  { base: "#4A5530", accent: "#6A7848" },
-  { base: "#3A5068", accent: "#5878A0" },
-  { base: "#8A7058", accent: "#B09878" },
-  { base: "#454545", accent: "#686868" },
-  { base: "#6A4A35", accent: "#987058" },
+  { base: "#8B4513", accent: "#A65E2E" },
+  { base: "#C87533", accent: "#E09050" },
+  { base: "#A0522D", accent: "#BF6F45" },
+  { base: "#D4883A", accent: "#E8A060" },
+  { base: "#6B3A2A", accent: "#8B5540" },
+  { base: "#CC6B3C", accent: "#E08858" },
+  { base: "#8E6540", accent: "#B08560" },
+  { base: "#5C3D2E", accent: "#7A5845" },
+  { base: "#B56A40", accent: "#D08858" },
 ];
 
 const GRID_CENTER: [number, number, number] = [0, 0.2, 0];
@@ -58,99 +58,158 @@ const TILE_ELEVATIONS = [
   0.01, 0.06, 0.03,
 ];
 
+// Deterministic micro-architecture variants per tile slot
+const TILE_ARCHETYPES = [
+  "stepped",
+  "recessed",
+  "pillar",
+  "stepped",
+  "recessed",
+  "pillar",
+  "recessed",
+  "stepped",
+  "pillar",
+];
+
 // ---------------------------------------------------------------------------
-//  Haze shaders — warm desert atmosphere behind the grid
+//  Volumetric tile shader — granular splatting surface with inner fog
 // ---------------------------------------------------------------------------
 
-const HAZE_VERTEX_SHADER = /* glsl */ `
+const TILE_VERTEX_SHADER = /* glsl */ `
 varying vec2 vUv;
+varying vec3 vWorldPos;
+varying vec3 vNormal;
 void main() {
   vUv = uv;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  vNormal = normalize(normalMatrix * normal);
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  vWorldPos = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
 }
 `;
 
-const HAZE_FRAGMENT_SHADER = /* glsl */ `
+const TILE_FRAGMENT_SHADER = /* glsl */ `
+uniform vec3 uBaseColor;
+uniform vec3 uAccentColor;
 uniform float uTime;
+uniform float uHover;
+
 varying vec2 vUv;
+varying vec3 vWorldPos;
+varying vec3 vNormal;
 
-vec3 permute(vec3 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
+// hash-based noise
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
 
-float snoise(vec2 v) {
-  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
-                      -0.577350269189626, 0.024390243902439);
-  vec2 i = floor(v + dot(v, C.yy));
-  vec2 x0 = v - i + dot(i, C.xx);
-  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
-  vec4 x12 = x0.xyxy + C.xxzz;
-  x12.xy -= i1;
-  i = mod(i, 289.0);
-  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
-                  + i.x + vec3(0.0, i1.x, 1.0));
-  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy),
-               dot(x12.zw, x12.zw)), 0.0);
-  m = m * m;
-  m = m * m;
-  vec3 xn = 2.0 * fract(p * C.www) - 1.0;
-  vec3 h = abs(xn) - 0.5;
-  vec3 ox = floor(xn + 0.5);
-  vec3 a0 = xn - ox;
-  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
-  vec3 g;
-  g.x = a0.x * x0.x + h.x * x0.y;
-  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
-  return 130.0 * dot(m, g);
+float hash3(vec3 p) {
+  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+
+float noise2d(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash(i);
+  float b = hash(i + vec2(1.0, 0.0));
+  float c = hash(i + vec2(0.0, 1.0));
+  float d = hash(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * noise2d(p);
+    p *= 2.1;
+    a *= 0.48;
+  }
+  return v;
 }
 
 void main() {
   vec2 uv = vUv;
-  float t = uTime * 0.05;
+  float t = uTime * 0.3;
 
-  vec3 warmAmber = vec3(0.85, 0.65, 0.40);
-  vec3 goldenHaze = vec3(0.92, 0.80, 0.58);
-  vec3 deepSand = vec3(0.70, 0.50, 0.30);
+  // granular speckle layer — thousands of tiny particles
+  float grain = hash(floor(uv * 200.0));
+  float grainMask = smoothstep(0.3, 0.7, grain);
+  float fineGrain = hash(floor(uv * 500.0 + t * 2.0));
 
-  float n1 = snoise(uv * 2.0 + vec2(1.7, t));
-  float n2 = snoise(uv * 4.0 + vec2(5.3, t * 1.2));
-  float n3 = snoise(uv * 8.0 + vec2(9.1, t * 0.8));
+  // fbm for organic volume feel
+  float f = fbm(uv * 6.0 + t * 0.15);
+  float f2 = fbm(uv * 12.0 - t * 0.1);
 
-  float fog = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2) * 0.5 + 0.5;
+  // edge dissolution — dissolve into speckles near tile boundaries
+  vec2 edgeDist = min(uv, 1.0 - uv);
+  float edgeFactor = smoothstep(0.0, 0.12, min(edgeDist.x, edgeDist.y));
+  float dissolve = smoothstep(0.0, 0.08, min(edgeDist.x, edgeDist.y) + (grain - 0.5) * 0.06);
 
-  float cv = snoise(uv * 3.0 + vec2(2.0, t * 0.4)) * 0.5 + 0.5;
-  vec3 color = mix(warmAmber, goldenHaze, cv);
-  color = mix(color, deepSand, (1.0 - fog) * 0.3);
+  // color mixing with volumetric variation
+  vec3 col = mix(uBaseColor, uAccentColor, f * 0.5 + uHover * 0.3);
+  col = mix(col, uAccentColor * 1.2, f2 * 0.15);
 
-  float streak = snoise(vec2(uv.x * 0.8 + uv.y * 1.2, t * 0.25) * 2.5)
-                 * 0.5 + 0.5;
-  streak = smoothstep(0.5, 0.8, streak);
-  color = mix(color, goldenHaze * 1.1, streak * 0.15);
+  // inner atmospheric glow — brighter center, darker edges
+  float innerGlow = smoothstep(0.0, 0.35, min(edgeDist.x, edgeDist.y));
+  col += uAccentColor * innerGlow * 0.08 * (1.0 + uHover * 2.0);
 
-  vec2 c = abs(uv - 0.5);
-  float warpX = snoise(vec2(uv.y * 3.0, t * 0.6)) * 0.03;
-  float warpY = snoise(vec2(uv.x * 3.0 + 50.0, t * 0.5)) * 0.03;
-  float edgeX = smoothstep(0.38, 0.48, c.x + warpX);
-  float edgeY = smoothstep(0.38, 0.48, c.y + warpY);
-  float radial = (1.0 - edgeX) * (1.0 - edgeY);
+  // granular texture overlay
+  col *= 0.92 + grainMask * 0.08;
+  col += (fineGrain - 0.5) * 0.03;
 
-  float alpha = smoothstep(0.3, 0.7, fog) * radial * 0.32;
+  // hover: intensify saturation and inner glow
+  float sat = 1.0 + uHover * 0.3;
+  vec3 gray = vec3(dot(col, vec3(0.299, 0.587, 0.114)));
+  col = mix(gray, col, sat);
+  col += uAccentColor * uHover * 0.12 * innerGlow;
 
-  float grain = snoise(uv * 100.0 + uTime) * 0.012;
-  color += grain;
+  // simple directional lighting
+  vec3 lightDir = normalize(vec3(0.6, 0.8, 1.0));
+  float diff = max(dot(vNormal, lightDir), 0.0);
+  float lighting = 0.55 + diff * 0.45;
+  col *= lighting;
 
-  gl_FragColor = vec4(color, alpha);
+  // final alpha with edge dissolution
+  float alpha = dissolve * (0.92 + grainMask * 0.08);
+
+  gl_FragColor = vec4(col, alpha);
 }
 `;
 
 // ---------------------------------------------------------------------------
-//  MemoryTile — solid box with standard material
+//  Point-cloud border shader for the AddTile
+// ---------------------------------------------------------------------------
+
+const ADD_BORDER_VERTEX_SHADER = /* glsl */ `
+uniform float uTime;
+void main() {
+  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mvPos;
+  gl_PointSize = 11.0;
+}
+`;
+
+const ADD_BORDER_FRAGMENT_SHADER = /* glsl */ `
+uniform vec3 uColor;
+void main() {
+  vec2 c = gl_PointCoord - 0.5;
+  if (length(c) > 0.5) discard;
+  gl_FragColor = vec4(uColor, 0.85);
+}
+`;
+
+// ---------------------------------------------------------------------------
+//  MemoryTile — volumetric splatting surface + micro-architecture
 // ---------------------------------------------------------------------------
 
 interface TileProps {
   position: [number, number, number];
   baseColor: string;
   accentColor: string;
-  isEmpty: boolean;
   depth: number;
+  archetype: string;
   onClick?: () => void;
 }
 
@@ -158,25 +217,32 @@ function MemoryTile({
   position,
   baseColor,
   accentColor,
-  isEmpty,
   depth,
+  archetype,
   onClick,
 }: TileProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
+  const matRef = useRef<THREE.ShaderMaterial>(null);
   const [hovered, setHovered] = useState(false);
   const hoverVal = useRef(0);
-  const baseCol = useMemo(() => new THREE.Color(baseColor), [baseColor]);
-  const accentCol = useMemo(() => new THREE.Color(accentColor), [accentColor]);
-  const lerpCol = useMemo(() => new THREE.Color(), []);
 
-  useFrame(() => {
-    if (!meshRef.current) return;
+  const uniforms = useMemo(
+    () => ({
+      uBaseColor: { value: new THREE.Color(baseColor) },
+      uAccentColor: { value: new THREE.Color(accentColor) },
+      uTime: { value: 0 },
+      uHover: { value: 0 },
+    }),
+    [baseColor, accentColor],
+  );
+
+  useFrame((state) => {
+    if (!groupRef.current || !matRef.current) return;
     const target = hovered ? 1 : 0;
     hoverVal.current += (target - hoverVal.current) * 0.08;
-    meshRef.current.position.z = position[2] + hoverVal.current * 0.12;
-    const mat = meshRef.current.material as THREE.MeshBasicMaterial;
-    lerpCol.copy(baseCol).lerp(accentCol, hoverVal.current * 0.4);
-    mat.color.copy(lerpCol);
+    groupRef.current.position.z = position[2] + hoverVal.current * 0.12;
+    matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+    matRef.current.uniforms.uHover.value = hoverVal.current;
   });
 
   const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
@@ -198,26 +264,186 @@ function MemoryTile({
     [onClick],
   );
 
+  const darkerBase = useMemo(() => {
+    const c = new THREE.Color(baseColor);
+    c.multiplyScalar(0.65);
+    return c;
+  }, [baseColor]);
+
+  const lighterAccent = useMemo(() => {
+    const c = new THREE.Color(accentColor);
+    c.multiplyScalar(1.15);
+    return c;
+  }, [accentColor]);
+
+  const noRaycast = useCallback((self: THREE.Object3D) => {
+    self.raycast = () => {};
+  }, []);
+
   return (
-    <mesh
-      ref={meshRef}
-      position={position}
-      onPointerOver={handlePointerOver}
-      onPointerOut={handlePointerOut}
-      onClick={handleClick}
-    >
-      <boxGeometry args={[TILE_SIZE, TILE_SIZE, depth]} />
-      <meshBasicMaterial
-        color={baseColor}
-        transparent={isEmpty}
-        opacity={isEmpty ? 0.7 : 1}
-      />
-    </mesh>
+    <group ref={groupRef} position={position}>
+      {/* Invisible hitbox — sole raycast target */}
+      <mesh
+        onPointerOver={handlePointerOver}
+        onPointerOut={handlePointerOut}
+        onClick={handleClick}
+      >
+        <boxGeometry args={[TILE_SIZE, TILE_SIZE, depth + 0.04]} />
+        <meshBasicMaterial colorWrite={false} depthWrite={false} />
+      </mesh>
+
+      {/* Main tile body — no raycasting */}
+      <mesh castShadow receiveShadow ref={noRaycast as never}>
+        <boxGeometry args={[TILE_SIZE, TILE_SIZE, depth]} />
+        <shaderMaterial
+          ref={matRef}
+          vertexShader={TILE_VERTEX_SHADER}
+          fragmentShader={TILE_FRAGMENT_SHADER}
+          uniforms={uniforms}
+          transparent
+        />
+      </mesh>
+
+      {/* Micro-architectural details — all with raycasting disabled */}
+      {archetype === "stepped" && (
+        <>
+          <mesh position={[0, 0, depth / 2 + 0.003]} castShadow ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.7, TILE_SIZE * 0.7, 0.008]} />
+            <meshStandardMaterial
+              color={darkerBase}
+              roughness={0.9}
+              metalness={0.05}
+            />
+          </mesh>
+          <mesh position={[TILE_SIZE * 0.2, -TILE_SIZE * 0.15, depth / 2 + 0.012]} castShadow ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.18, TILE_SIZE * 0.22, 0.015]} />
+            <meshStandardMaterial
+              color={lighterAccent}
+              roughness={0.85}
+              metalness={0.05}
+            />
+          </mesh>
+        </>
+      )}
+      {archetype === "recessed" && (
+        <>
+          <mesh position={[0, 0, depth / 2 - 0.004]} ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.6, TILE_SIZE * 0.6, 0.006]} />
+            <meshStandardMaterial
+              color={darkerBase}
+              roughness={0.95}
+              metalness={0.02}
+            />
+          </mesh>
+          <mesh position={[-TILE_SIZE * 0.22, TILE_SIZE * 0.22, depth / 2 + 0.006]} castShadow ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.12, TILE_SIZE * 0.4, 0.01]} />
+            <meshStandardMaterial
+              color={lighterAccent}
+              roughness={0.8}
+              metalness={0.08}
+            />
+          </mesh>
+        </>
+      )}
+      {archetype === "pillar" && (
+        <>
+          <mesh position={[0, 0, depth / 2 + 0.018]} castShadow ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.15, TILE_SIZE * 0.15, 0.035]} />
+            <meshStandardMaterial
+              color={lighterAccent}
+              roughness={0.75}
+              metalness={0.1}
+            />
+          </mesh>
+          <mesh position={[0, 0, depth / 2 + 0.003]} castShadow ref={noRaycast as never}>
+            <boxGeometry args={[TILE_SIZE * 0.35, TILE_SIZE * 0.35, 0.006]} />
+            <meshStandardMaterial
+              color={darkerBase}
+              roughness={0.9}
+              metalness={0.05}
+            />
+          </mesh>
+        </>
+      )}
+
+      {/* Tile surface particles */}
+      <TileSurfaceParticles baseColor={baseColor} accentColor={accentColor} depth={depth} />
+    </group>
   );
 }
 
 // ---------------------------------------------------------------------------
-//  AddTile — outline + "+" using drei <Edges>
+//  TileSurfaceParticles — scattered granular points on tile top face
+// ---------------------------------------------------------------------------
+
+function TileSurfaceParticles({
+  baseColor,
+  accentColor,
+  depth,
+}: {
+  baseColor: string;
+  accentColor: string;
+  depth: number;
+}) {
+  const ref = useRef<THREE.Points>(null);
+  const count = 300;
+
+  const { positions, colors } = useMemo(() => {
+    const pos = new Float32Array(count * 3);
+    const col = new Float32Array(count * 3);
+    const base = new THREE.Color(baseColor);
+    const accent = new THREE.Color(accentColor);
+    const tmp = new THREE.Color();
+
+    for (let i = 0; i < count; i++) {
+      const x = (Math.random() - 0.5) * TILE_SIZE * 0.95;
+      const y = (Math.random() - 0.5) * TILE_SIZE * 0.95;
+      const z = depth / 2 + Math.random() * 0.025 + 0.002;
+      pos[i * 3] = x;
+      pos[i * 3 + 1] = y;
+      pos[i * 3 + 2] = z;
+
+      tmp.copy(base).lerp(accent, Math.random() * 0.6);
+      col[i * 3] = tmp.r;
+      col[i * 3 + 1] = tmp.g;
+      col[i * 3 + 2] = tmp.b;
+    }
+    return { positions: pos, colors: col };
+  }, [baseColor, accentColor, depth, count]);
+
+  useFrame((state) => {
+    if (!ref.current) return;
+    const geo = ref.current.geometry;
+    const posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
+    const t = state.clock.elapsedTime;
+    for (let i = 0; i < count; i++) {
+      const baseZ = depth / 2 + 0.002;
+      const drift = Math.sin(t * 0.5 + i * 0.7) * 0.008 + Math.cos(t * 0.3 + i * 1.3) * 0.005;
+      posAttr.setZ(i, baseZ + Math.random() * 0.02 + drift);
+    }
+    posAttr.needsUpdate = true;
+  });
+
+  return (
+    <points ref={ref}>
+      <bufferGeometry>
+        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
+        <bufferAttribute attach="attributes-color" args={[colors, 3]} />
+      </bufferGeometry>
+      <pointsMaterial
+        size={0.008}
+        vertexColors
+        transparent
+        opacity={0.45}
+        sizeAttenuation
+        depthWrite={false}
+      />
+    </points>
+  );
+}
+
+// ---------------------------------------------------------------------------
+//  AddTile — point-cloud flickering dotted border + "+"
 // ---------------------------------------------------------------------------
 
 interface AddTileProps {
@@ -227,14 +453,32 @@ interface AddTileProps {
 
 function AddTile({ position, onClick }: AddTileProps) {
   const groupRef = useRef<THREE.Group>(null);
+  const borderMatRef = useRef<THREE.ShaderMaterial>(null);
+  const plusMatRef = useRef<THREE.ShaderMaterial>(null);
   const [hovered, setHovered] = useState(false);
   const hoverVal = useRef(0);
 
-  useFrame(() => {
+  const defaultColor = useMemo(() => new THREE.Color("#9A9080"), []);
+  const hoverColor = useMemo(() => new THREE.Color("#7A6850"), []);
+  const lerpColor = useMemo(() => new THREE.Color(), []);
+
+  useFrame((state) => {
     if (!groupRef.current) return;
     const target = hovered ? 1 : 0;
     hoverVal.current += (target - hoverVal.current) * 0.08;
     groupRef.current.position.z = position[2] + hoverVal.current * 0.08;
+
+    lerpColor.copy(defaultColor).lerp(hoverColor, hoverVal.current);
+    const t = state.clock.elapsedTime;
+
+    if (borderMatRef.current) {
+      borderMatRef.current.uniforms.uTime.value = t;
+      borderMatRef.current.uniforms.uColor.value.copy(lerpColor);
+    }
+    if (plusMatRef.current) {
+      plusMatRef.current.uniforms.uTime.value = t;
+      plusMatRef.current.uniforms.uColor.value.copy(lerpColor);
+    }
   });
 
   const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
@@ -256,11 +500,60 @@ function AddTile({ position, onClick }: AddTileProps) {
     [onClick],
   );
 
-  const edgeColor = hovered ? "#7A7060" : "#9A9080";
+  const borderPositions = useMemo(() => {
+    const pointsPerEdge = 120;
+    const totalPoints = pointsPerEdge * 4;
+    const pos = new Float32Array(totalPoints * 3);
+    const half = TILE_SIZE / 2;
+    const z = TILE_DEPTH_EMPTY / 2 + 0.002;
+    let idx = 0;
+
+    for (let i = 0; i < pointsPerEdge; i++) {
+      const t = (i / pointsPerEdge) * TILE_SIZE - half;
+      pos[idx * 3] = t; pos[idx * 3 + 1] = half; pos[idx * 3 + 2] = z; idx++;
+      pos[idx * 3] = t; pos[idx * 3 + 1] = -half; pos[idx * 3 + 2] = z; idx++;
+      pos[idx * 3] = -half; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
+      pos[idx * 3] = half; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
+    }
+
+    return pos;
+  }, []);
+
+  const borderUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color("#9A9080") },
+    }),
+    [],
+  );
+
+  const plusUniforms = useMemo(
+    () => ({
+      uTime: { value: 0 },
+      uColor: { value: new THREE.Color("#9A9080") },
+    }),
+    [],
+  );
+
+  const plusPositions = useMemo(() => {
+    const hLen = 0.12;
+    const z = TILE_DEPTH_EMPTY / 2 + 0.002;
+    const count = 24;
+    const pos = new Float32Array(count * 2 * 3);
+    let idx = 0;
+    for (let i = 0; i < count; i++) {
+      const t = (i / (count - 1)) * 2 * hLen - hLen;
+      pos[idx * 3] = t; pos[idx * 3 + 1] = 0; pos[idx * 3 + 2] = z; idx++;
+    }
+    for (let i = 0; i < count; i++) {
+      const t = (i / (count - 1)) * 2 * hLen - hLen;
+      pos[idx * 3] = 0; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
+    }
+    return pos;
+  }, []);
 
   return (
     <group ref={groupRef} position={position}>
-      {/* Invisible hitbox */}
       <mesh
         onPointerOver={handlePointerOver}
         onPointerOut={handlePointerOut}
@@ -270,39 +563,34 @@ function AddTile({ position, onClick }: AddTileProps) {
         <meshBasicMaterial colorWrite={false} depthWrite={false} />
       </mesh>
 
-      {/* Wireframe outline via drei Edges */}
-      <mesh>
-        <boxGeometry args={[TILE_SIZE, TILE_SIZE, TILE_DEPTH_EMPTY]} />
-        <meshBasicMaterial visible={false} />
-        <Edges threshold={15} color={edgeColor} lineWidth={1} />
-      </mesh>
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[borderPositions, 3]} />
+        </bufferGeometry>
+        <shaderMaterial
+          ref={borderMatRef}
+          vertexShader={ADD_BORDER_VERTEX_SHADER}
+          fragmentShader={ADD_BORDER_FRAGMENT_SHADER}
+          uniforms={borderUniforms}
+          transparent
+          depthWrite={false}
+        />
+      </points>
 
-      {/* "+" cross lines */}
-      <PlusIcon color={edgeColor} />
+      <points>
+        <bufferGeometry>
+          <bufferAttribute attach="attributes-position" args={[plusPositions, 3]} />
+        </bufferGeometry>
+        <shaderMaterial
+          ref={plusMatRef}
+          vertexShader={ADD_BORDER_VERTEX_SHADER}
+          fragmentShader={ADD_BORDER_FRAGMENT_SHADER}
+          uniforms={plusUniforms}
+          transparent
+          depthWrite={false}
+        />
+      </points>
     </group>
-  );
-}
-
-function PlusIcon({ color }: { color: string }) {
-  const hLen = 0.1;
-  const positions = useMemo(() => {
-    const p = new Float32Array(12);
-    // horizontal bar
-    p[0] = -hLen; p[1] = 0; p[2] = TILE_DEPTH_EMPTY / 2 + 0.002;
-    p[3] = hLen;  p[4] = 0; p[5] = TILE_DEPTH_EMPTY / 2 + 0.002;
-    // vertical bar
-    p[6] = 0; p[7] = -hLen; p[8] = TILE_DEPTH_EMPTY / 2 + 0.002;
-    p[9] = 0; p[10] = hLen; p[11] = TILE_DEPTH_EMPTY / 2 + 0.002;
-    return p;
-  }, []);
-
-  return (
-    <lineSegments>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-      </bufferGeometry>
-      <lineBasicMaterial color={color} linewidth={1} />
-    </lineSegments>
   );
 }
 
@@ -310,7 +598,7 @@ function PlusIcon({ color }: { color: string }) {
 //  Ambient particle dust
 // ---------------------------------------------------------------------------
 
-function ParticleDust({ count = 120 }: { count?: number }) {
+function ParticleDust({ count = 200 }: { count?: number }) {
   const ref = useRef<THREE.Points>(null);
 
   const positions = useMemo(() => {
@@ -337,43 +625,11 @@ function ParticleDust({ count = 120 }: { count?: number }) {
         size={0.006}
         color="#8B7D5B"
         transparent
-        opacity={0.2}
+        opacity={0.25}
         sizeAttenuation
         depthWrite={false}
       />
     </points>
-  );
-}
-
-// ---------------------------------------------------------------------------
-//  Desert haze — warm fog plane behind the grid
-// ---------------------------------------------------------------------------
-
-function DesertHaze() {
-  const meshRef = useRef<THREE.Mesh>(null);
-
-  const uniforms = useMemo(
-    () => ({ uTime: { value: 0 } }),
-    [],
-  );
-
-  useFrame((state) => {
-    if (!meshRef.current) return;
-    (meshRef.current.material as THREE.ShaderMaterial).uniforms.uTime.value =
-      state.clock.elapsedTime;
-  });
-
-  return (
-    <mesh ref={meshRef} position={[0, 0.12, -0.05]}>
-      <planeGeometry args={[3.8, 3.8]} />
-      <shaderMaterial
-        vertexShader={HAZE_VERTEX_SHADER}
-        fragmentShader={HAZE_FRAGMENT_SHADER}
-        uniforms={uniforms}
-        transparent
-        depthWrite={false}
-      />
-    </mesh>
   );
 }
 
@@ -435,8 +691,8 @@ function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps
             position={[x, y, z]}
             baseColor={palette.base}
             accentColor={palette.accent}
-            isEmpty={!isFilled}
             depth={isFilled ? TILE_DEPTH : TILE_DEPTH_EMPTY}
+            archetype={TILE_ARCHETYPES[i]}
             onClick={memory ? () => onMemoryClick?.(memory.id) : undefined}
           />
         );
@@ -447,7 +703,6 @@ function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps
         onClick={onNewMemoryClick}
       />
 
-      <DesertHaze />
       <ParticleDust />
     </group>
   );
@@ -482,15 +737,38 @@ export default function IngestScreen({
   }, [description, onGenerate]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#8B5E3C]">
+    <div className="relative h-full w-full overflow-hidden bg-[#F5F2ED]">
       <Canvas
+        shadows
         camera={{ position: [0, 0, 4.2], fov: 42 }}
-        gl={{ antialias: true, alpha: true, toneMapping: THREE.NoToneMapping }}
+        gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
         style={{ position: "absolute", inset: 0 }}
       >
-        <ambientLight intensity={1.2} />
-        <directionalLight position={[4, 6, 8]} intensity={1.0} />
-        <directionalLight position={[-3, -1, 5]} intensity={0.3} color="#E8D5C0" />
+        <ambientLight intensity={0.4} />
+
+        {/* Dramatic angled sun — casts long crisp shadows */}
+        <directionalLight
+          position={[3, 5, 6]}
+          intensity={1.8}
+          castShadow
+          shadow-mapSize-width={2048}
+          shadow-mapSize-height={2048}
+          shadow-camera-near={0.1}
+          shadow-camera-far={20}
+          shadow-camera-left={-3}
+          shadow-camera-right={3}
+          shadow-camera-top={3}
+          shadow-camera-bottom={-3}
+          shadow-bias={-0.001}
+          shadow-normalBias={0.02}
+          color="#FFF5E8"
+        />
+
+        {/* Warm fill from below-left */}
+        <directionalLight position={[-3, -2, 4]} intensity={0.3} color="#E8D5C0" />
+
+        {/* Cool rim from behind */}
+        <directionalLight position={[0, -4, -2]} intensity={0.15} color="#C0D0E0" />
 
         <Suspense fallback={null}>
           <Float speed={0.6} rotationIntensity={0.015} floatIntensity={0.1}>
@@ -504,9 +782,9 @@ export default function IngestScreen({
 
         <EffectComposer>
           <N8AO
-            aoRadius={0.6}
-            intensity={2.5}
-            distanceFalloff={0.5}
+            aoRadius={0.4}
+            intensity={3.5}
+            distanceFalloff={0.3}
           />
         </EffectComposer>
       </Canvas>
