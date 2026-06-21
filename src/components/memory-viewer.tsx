@@ -8,11 +8,11 @@ interface MemoryViewerProps {
 }
 
 const CONTROLS_MAP = [
-  { key: "W / S", action: "move forward / back" },
-  { key: "A / D", action: "strafe left / right" },
-  { key: "Q / E", action: "move up / down" },
-  { key: "mouse drag", action: "look around" },
-  { key: "scroll", action: "zoom" },
+  { key: "W / S", action: "Move Forward / Back" },
+  { key: "A / D", action: "Strafe Left / Right" },
+  { key: "Q / E", action: "Move Up / Down" },
+  { key: "Drag", action: "Look Around" },
+  { key: "Scroll", action: "Zoom" },
 ] as const;
 
 export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
@@ -90,17 +90,17 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
   }, [src]);
 
   return (
-    <div className="relative h-full w-full bg-neutral-950 overflow-hidden">
+    <div className="relative h-full w-full bg-[#1A1817] overflow-hidden font-sans">
       {/* Three.js / WebGL canvas mount target */}
       <div ref={containerRef} className="absolute inset-0" />
 
       {/* Loading indicator (pre-scene) */}
       {!isLoaded && !loadError && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <div className="flex flex-col items-center gap-4">
-            <div className="w-6 h-6 rounded-full border border-neutral-700 border-t-neutral-400 animate-spin" />
-            <span className="text-xs text-neutral-600 tracking-widest lowercase">
-              loading splat...
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-[#F7F5F0]">
+          <div className="flex flex-col items-center gap-6">
+            <div className="w-8 h-8 rounded-full border-[1px] border-[#E2DCD0] border-t-[#C86B3C] animate-spin" />
+            <span className="text-[10px] text-[#7A6B63] tracking-[0.3em] uppercase">
+              Loading Splat...
             </span>
           </div>
         </div>
@@ -108,19 +108,19 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
 
       {/* Error state */}
       {loadError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8">
-          <p className="text-xs text-red-500/70 tracking-wider lowercase text-center max-w-sm">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 bg-[#F7F5F0]">
+          <p className="text-sm font-serif text-[#C86B3C] text-center max-w-sm">
             {loadError}
           </p>
-          <p className="text-xs text-neutral-700 tracking-widest lowercase">
-            ensure <code className="text-neutral-600">sample_memory.splat</code>{" "}
-            exists in <code className="text-neutral-600">/public</code>
+          <p className="text-[10px] text-[#7A6B63] tracking-[0.2em] uppercase">
+            ensure <code className="text-[#4A3320]">sample_memory.splat</code>{" "}
+            exists in <code className="text-[#4A3320]">/public</code>
           </p>
           <button
             onClick={onReturn}
-            className="mt-2 text-xs tracking-[0.25em] lowercase text-neutral-400 hover:text-neutral-100 transition-colors"
+            className="mt-4 text-[10px] tracking-[0.3em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-colors border-b border-[#E2DCD0] pb-1"
           >
-            ← return
+            Return
           </button>
         </div>
       )}
@@ -129,32 +129,32 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {!loadError && (
         <div
           className={[
-            "absolute inset-x-0 top-0 flex items-start justify-between p-6 pointer-events-none transition-opacity duration-500",
+            "absolute inset-x-0 top-0 flex items-start justify-between p-8 pointer-events-none transition-opacity duration-500",
             hudVisible ? "opacity-100" : "opacity-0",
           ].join(" ")}
         >
           {/* Return button */}
           <button
             onClick={onReturn}
-            className="pointer-events-auto flex items-center gap-2 bg-neutral-950/70 backdrop-blur-sm border border-neutral-800 rounded-xl px-4 py-2 text-xs tracking-widest lowercase text-neutral-400 hover:text-neutral-100 hover:border-neutral-600 transition-all"
+            className="pointer-events-auto flex items-center gap-3 bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[10px] tracking-[0.2em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-all shadow-sm"
           >
-            <span className="text-base leading-none">←</span>
-            return
+            <span className="text-lg leading-none font-serif">←</span>
+            Return
           </button>
 
           {/* Controls legend */}
-          <div className="pointer-events-auto bg-neutral-950/70 backdrop-blur-sm border border-neutral-800 rounded-xl px-5 py-4 flex flex-col gap-2">
-            <p className="text-xs tracking-widest text-neutral-600 lowercase mb-1">
-              controls
+          <div className="pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-6 py-5 flex flex-col gap-3 shadow-sm min-w-[200px]">
+            <p className="text-[9px] tracking-[0.3em] text-[#B5AD9F] uppercase mb-2 border-b border-[#E2DCD0] pb-2">
+              Controls
             </p>
             {CONTROLS_MAP.map(({ key, action }) => (
-              <div key={key} className="flex items-center gap-4">
-                <kbd className="text-xs text-neutral-400 bg-neutral-900 border border-neutral-700 rounded px-2 py-0.5 font-mono min-w-20 text-center">
-                  {key}
-                </kbd>
-                <span className="text-xs text-neutral-600 lowercase tracking-wide">
+              <div key={key} className="flex items-center justify-between gap-6">
+                <span className="text-[10px] text-[#7A6B63] uppercase tracking-wider">
                   {action}
                 </span>
+                <kbd className="text-[10px] text-[#4A3320] font-medium tracking-widest">
+                  {key}
+                </kbd>
               </div>
             ))}
           </div>
@@ -165,16 +165,16 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {!loadError && (
         <button
           onClick={() => setHudVisible((v) => !v)}
-          className="absolute bottom-6 right-6 bg-neutral-950/70 backdrop-blur-sm border border-neutral-800 rounded-xl px-4 py-2 text-xs tracking-widest lowercase text-neutral-600 hover:text-neutral-300 hover:border-neutral-600 transition-all"
+          className="absolute bottom-8 right-8 pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[9px] tracking-[0.2em] uppercase text-[#7A6B63] hover:text-[#C86B3C] transition-all shadow-sm"
         >
-          {hudVisible ? "hide hud" : "show hud"}
+          {hudVisible ? "Hide HUD" : "Show HUD"}
         </button>
       )}
 
       {/* Subtle branding */}
-      <div className="absolute bottom-6 left-6 pointer-events-none">
-        <span className="text-xs tracking-[0.25em] text-neutral-800 lowercase">
-          ovlt
+      <div className="absolute bottom-8 left-8 pointer-events-none">
+        <span className="text-2xl font-serif text-[#F7F5F0]/50">
+          Rem
         </span>
       </div>
     </div>
