@@ -8,9 +8,8 @@ interface MemoryViewerProps {
 }
 
 const CONTROLS_MAP = [
-  { key: "W / S", action: "Move Forward / Back" },
+  { key: "W / S", action: "Move Up / Down" },
   { key: "A / D", action: "Strafe Left / Right" },
-  { key: "Q / E", action: "Move Up / Down" },
   { key: "Drag", action: "Look Around" },
   { key: "Scroll", action: "Zoom" },
 ] as const;
