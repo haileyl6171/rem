@@ -1,87 +1,138 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import IngestScreen, { type MemoryEntry } from "@/components/ingest-screen";
+import { useState, useCallback, useRef } from "react";
+import IngestScreen from "@/components/ingest-screen";
 import LoadingScreen from "@/components/loading-screen";
 import MemoryViewer from "@/components/memory-viewer";
+import {
+  DEMO_MEMORIES,
+  buildDemoMemory,
+  type DemoMemory,
+} from "@/lib/demo-data";
 
-type ViewState = "input" | "loading" | "viewer";
+type ViewState = "grid" | "loading" | "viewer";
 
-interface MemoryData {
-  description: string;
-  imageFiles: File[];
-}
-
-const DEMO_MEMORIES: MemoryEntry[] = [
-  { id: "1", title: "Golden hour on the porch", colorProfile: { base: "#8B4513", accent: "#A65E2E" } },
-  { id: "2", title: "Morning fog in the valley", colorProfile: { base: "#C87533", accent: "#E09050" } },
-  { id: "3", title: "Rain on the cobblestones", colorProfile: { base: "#A0522D", accent: "#BF6F45" } },
-  { id: "4", title: "Autumn leaves at the creek", colorProfile: { base: "#D4883A", accent: "#E8A060" } },
-  { id: "5", title: "Dusty road at sunset", colorProfile: { base: "#6B3A2A", accent: "#8B5540" } },
-  { id: "6", title: "Old bookshop on Market St", colorProfile: { base: "#CC6B3C", accent: "#E08858" } },
-  { id: "7", title: "Wind through the wheat field", colorProfile: { base: "#8E6540", accent: "#B08560" } },
-  { id: "8", title: "First snow on the rooftop", colorProfile: { base: "#5C3D2E", accent: "#7A5845" } },
-];
+// Length of the cream "wash" that covers the swap between screens.
+const WASH_COVER_MS = 360;
+const WASH_CLEAR_MS = 460;
 
 export default function Home() {
-  const [view, setView] = useState<ViewState>("input");
-  const [memoryData, setMemoryData] = useState<MemoryData>({
-    description: "",
-    imageFiles: [],
-  });
+  const [view, setView] = useState<ViewState>("grid");
+  const [memories, setMemories] = useState<DemoMemory[]>(DEMO_MEMORIES);
+  const [activeMemory, setActiveMemory] = useState<DemoMemory | null>(null);
+  const [pending, setPending] = useState<DemoMemory | null>(null);
+  const [washing, setWashing] = useState(false);
+  const createdCount = useRef(0);
 
-  const handleGenerate = useCallback(
-    (description: string, imageFiles: File[]) => {
-      setMemoryData({ description, imageFiles });
-      setView("loading");
+  // Cinematic screen swap: fade a cream wash over the screen, swap the view
+  // underneath it, then clear the wash so the new screen's entrance plays.
+  const transitionTo = useCallback((next: ViewState, after?: () => void) => {
+    setWashing(true);
+    window.setTimeout(() => {
+      after?.();
+      setView(next);
+      window.setTimeout(() => setWashing(false), WASH_CLEAR_MS);
+    }, WASH_COVER_MS);
+  }, []);
 
-      const form = new FormData();
-      form.append("description", description);
-      imageFiles.forEach((file) => form.append("photos", file));
-
-      fetch("/api/memories", { method: "POST", body: form })
-        .then(async (res) => {
-          const body = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            console.warn("[create memory] non-OK response:", res.status, body);
-          } else {
-            console.info("[create memory] created:", body.id);
-          }
-        })
-        .catch((err) => console.error("[create memory] request failed:", err));
+  // Click an existing memory tile → open its scene.
+  const handleMemoryClick = useCallback(
+    (id: string) => {
+      const memory = memories.find((m) => m.id === id);
+      if (!memory) return;
+      transitionTo("viewer", () => setActiveMemory(memory));
     },
-    []
+    [memories, transitionTo],
   );
 
-  const handleMemoryClick = useCallback(() => {
-    setView("viewer");
-  }, []);
+  // Submit the form → run the scripted reconstruction, then reveal the scene.
+  const handleGenerate = useCallback(
+    (description: string) => {
+      const memory = buildDemoMemory(description, createdCount.current++);
+      transitionTo("loading", () => setPending(memory));
+    },
+    [transitionTo],
+  );
 
+  // The loading sequence finished: file the new memory into the grid and open it.
   const handleLoadingComplete = useCallback(() => {
-    setView("viewer");
-  }, []);
+    if (!pending) return;
+    transitionTo("viewer", () => {
+      setMemories((prev) => [pending, ...prev].slice(0, 8));
+      setActiveMemory(pending);
+      setPending(null);
+    });
+  }, [pending, transitionTo]);
 
   const handleReturn = useCallback(() => {
-    setMemoryData({ description: "", imageFiles: [] });
-    setView("input");
-  }, []);
+    transitionTo("grid", () => setActiveMemory(null));
+  }, [transitionTo]);
+
+  // Inside the viewer, jump to a related memory's scene without leaving.
+  const handleSelectRelated = useCallback(
+    (id: string) => {
+      const memory = memories.find((m) => m.id === id);
+      if (memory) setActiveMemory(memory);
+    },
+    [memories],
+  );
+
+  const related = activeMemory
+    ? memories.filter((m) => m.id !== activeMemory.id).slice(0, 5)
+    : [];
 
   return (
-    <main className="h-full w-full">
-      {view === "input" && (
-        <IngestScreen
-          memories={DEMO_MEMORIES}
-          onMemoryClick={handleMemoryClick}
-          onGenerate={handleGenerate}
-        />
+    <main className="relative h-full w-full overflow-hidden">
+      {view === "grid" && (
+        <div className="h-full w-full animate-fade-in">
+          <IngestScreen
+            memories={memories}
+            onMemoryClick={handleMemoryClick}
+            onGenerate={handleGenerate}
+          />
+        </div>
       )}
+
       {view === "loading" && (
-        <LoadingScreen
-          description={memoryData.description}
-          onComplete={handleLoadingComplete}
-        />
+        <div className="h-full w-full animate-fade-in">
+          <LoadingScreen
+            description={pending?.caption}
+            accent={pending?.colorProfile.accent}
+            onComplete={handleLoadingComplete}
+          />
+        </div>
       )}
-      {view === "viewer" && <MemoryViewer onReturn={handleReturn} />}
+
+      {view === "viewer" && activeMemory && (
+        <div className="h-full w-full">
+          <MemoryViewer
+            key={activeMemory.id}
+            src={activeMemory.splatUrl}
+            title={activeMemory.title}
+            caption={activeMemory.caption}
+            date={activeMemory.date}
+            accent={activeMemory.colorProfile.accent}
+            related={related}
+            onSelectRelated={handleSelectRelated}
+            onReturn={handleReturn}
+          />
+        </div>
+      )}
+
+      {/* Cinematic cross-dissolve overlay (cream wash with a soft vignette). */}
+      <div
+        aria-hidden
+        className={[
+          "pointer-events-none absolute inset-0 z-50 transition-opacity ease-in-out",
+          washing
+            ? "opacity-100 duration-300"
+            : "opacity-0 duration-500",
+        ].join(" ")}
+        style={{
+          background:
+            "radial-gradient(120% 120% at 50% 45%, #FBF9F5 0%, #F2EDE4 100%)",
+        }}
+      />
     </main>
   );
 }

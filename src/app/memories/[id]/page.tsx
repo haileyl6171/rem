@@ -15,6 +15,7 @@
 // ============================================================================
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { Memory } from "@/types/memory";
 import { TERMINAL_STATUSES } from "@/types/memory";
@@ -88,12 +89,12 @@ function ErrorView({ message }: { message: string }) {
       <p className="text-xs text-red-500/70 tracking-wider lowercase text-center max-w-sm">
         {message}
       </p>
-      <a
+      <Link
         href="/"
         className="text-xs tracking-[0.25em] lowercase text-neutral-400 hover:text-neutral-100"
       >
         ← start over
-      </a>
+      </Link>
     </div>
   );
 }

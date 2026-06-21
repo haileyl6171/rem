@@ -24,7 +24,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geist.variable} ${playfair.variable} h-full`}>
-      <body suppressHydrationWarning className="h-full bg-[#F7F5F0] text-[#4A3320] antialiased">
+      <body suppressHydrationWarning className="h-full bg-[#EEF2F6] text-[#2A323B] antialiased">
         {children}
       </body>
     </html>

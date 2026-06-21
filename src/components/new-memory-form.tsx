@@ -2,8 +2,6 @@
 
 import { useRef, useState, useCallback } from "react";
 
-const MIN_PHOTOS = 3;
-
 interface NewMemoryFormProps {
   onSubmit: (description: string, imageFiles: File[]) => void;
   onCancel: () => void;
@@ -95,7 +93,8 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
     onCancel();
   }, [previews, onCancel]);
 
-  const canSubmit = imageFiles.length >= MIN_PHOTOS;
+  // Low-friction for the demo: a description OR at least one photo is enough.
+  const canSubmit = description.trim().length > 0 || imageFiles.length > 0;
 
   const handleSubmit = useCallback(() => {
     if (!canSubmit) return;
@@ -105,12 +104,19 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
   }, [canSubmit, description, imageFiles, previews, onSubmit]);
 
   return (
-    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
-      <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
-        {/* Optional text description */}
+    <div className="glass-scrim absolute inset-0 z-10 flex items-center justify-center p-6 animate-fade-in">
+      <div className="glass-dark pointer-events-auto w-full max-w-md rounded-2xl p-8 animate-scale-in">
+        <div className="mb-6">
+          <h2 className="font-serif text-2xl text-white/90">New memory</h2>
+          <p className="mt-1 text-[11px] tracking-[0.15em] text-white/40 uppercase">
+            Describe a moment — we&apos;ll rebuild it in 3D
+          </p>
+        </div>
+
+        {/* Text description */}
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
-            Describe the scene (optional)
+          <label className="text-[10px] tracking-[0.2em] text-white/45 uppercase">
+            The scene
           </label>
           <button
             type="button"
@@ -118,8 +124,8 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
             className={[
               "flex h-7 w-7 items-center justify-center rounded-full transition-all",
               isListening
-                ? "animate-pulse bg-[#C86B3C] text-white"
-                : "bg-[#3D3830] text-[#9A8B7A] hover:bg-[#4A4035] hover:text-[#D8C8A8]",
+                ? "animate-pulse bg-[#5B89A6] text-white shadow-[0_0_16px_rgba(91,137,166,0.7)]"
+                : "bg-white/10 text-white/55 hover:bg-white/20 hover:text-white",
             ].join(" ")}
             title={isListening ? "Stop recording" : "Voice input"}
           >
@@ -145,31 +151,31 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
           placeholder={isListening ? "Listening..." : "A sun-drenched afternoon in a quiet garden..."}
           rows={2}
           className={[
-            "mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]",
-            isListening ? "ring-1 ring-[#C86B3C]/50" : "",
+            "mb-6 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-5 py-4 text-sm leading-relaxed text-white/85 placeholder-white/30 transition-all focus:outline-none focus:ring-1 focus:ring-[#8FB6CE]",
+            isListening ? "ring-1 ring-[#8FB6CE]/60" : "",
           ].join(" ")}
         />
         {voiceError && (
-          <p className="-mt-4 mb-4 text-[10px] text-[#C86B3C]">{voiceError}</p>
+          <p className="-mt-4 mb-4 text-[10px] text-[#8FB6CE]">{voiceError}</p>
         )}
 
-        {/* Photo upload — mandatory */}
-        <label className="mb-3 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
-          Photos of the scene
-          <span className="ml-2 normal-case tracking-normal text-[#C86B3C]">
-            ({imageFiles.length}/{MIN_PHOTOS})
+        {/* Photo upload — optional */}
+        <label className="mb-3 block text-[10px] tracking-[0.2em] text-white/45 uppercase">
+          Photos
+          <span className="ml-2 normal-case tracking-normal text-white/30">
+            optional{imageFiles.length > 0 ? ` · ${imageFiles.length} added` : ""}
           </span>
         </label>
 
         {/* Thumbnail grid */}
-        <div className="mb-4 flex flex-wrap gap-2">
+        <div className="mb-6 flex flex-wrap gap-2">
           {previews.map((src, i) => (
-            <div key={i} className="group relative h-20 w-20 overflow-hidden bg-[#3D3830]">
+            <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg bg-white/5">
               <img src={src} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
               <button
                 type="button"
                 onClick={() => handleRemovePhoto(i)}
-                className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center bg-[#2A2520]/70 text-[10px] text-[#D8C8A8] opacity-0 transition-opacity group-hover:opacity-100"
+                className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
               >
                 ×
               </button>
@@ -179,7 +185,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="flex h-20 w-20 items-center justify-center border border-dashed border-[#4A4035] text-[#6A5E50] transition-colors hover:border-[#C86B3C] hover:text-[#C86B3C]"
+            className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-white/20 text-white/40 transition-colors hover:border-[#8FB6CE] hover:text-[#8FB6CE]"
           >
             <span className="text-2xl leading-none">+</span>
           </button>
@@ -201,7 +207,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
           <button
             type="button"
             onClick={handleClose}
-            className="flex-1 border border-[#4A4035] py-3 text-[10px] uppercase tracking-[0.3em] text-[#9A8B7A] transition-colors hover:border-[#C86B3C]"
+            className="flex-1 rounded-xl border border-white/15 py-3 text-[10px] uppercase tracking-[0.3em] text-white/55 transition-colors hover:border-white/40 hover:text-white/80"
           >
             Cancel
           </button>
@@ -210,13 +216,13 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
             onClick={handleSubmit}
             disabled={!canSubmit}
             className={[
-              "flex-1 py-3 text-[10px] uppercase tracking-[0.3em] transition-all",
+              "flex-1 rounded-xl py-3 text-[10px] uppercase tracking-[0.3em] transition-all",
               canSubmit
-                ? "bg-[#C86B3C] text-white hover:bg-[#A6552D]"
-                : "cursor-not-allowed bg-[#E2DCD0] text-[#A89F96]",
+                ? "bg-[#5B89A6] text-white hover:bg-[#3E6E8E] shadow-[0_0_24px_-4px_rgba(91,137,166,0.7)]"
+                : "cursor-not-allowed bg-white/10 text-white/30",
             ].join(" ")}
           >
-            Generate
+            Reconstruct
           </button>
         </div>
       </div>
