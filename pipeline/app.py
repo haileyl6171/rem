@@ -2,8 +2,9 @@
 #  Modal app + trigger endpoint  (GPU side of CONTRACT B)
 #  Owned by P3.
 #
-#  Deploy:   modal deploy pipeline/app.py    → prints the URL for MODAL_URL
-#  Dev:      modal serve  pipeline/app.py     → live-reloading dev URL
+#  Deploy:   cd pipeline && modal deploy app.py   → prints the URL for MODAL_URL
+#  Dev:      cd pipeline && modal serve  app.py    → live-reloading dev URL
+#  (run from the pipeline/ dir so the image's relative paths resolve)
 #
 #  This file does TWO things:
 #    1. `start`  — a tiny HTTPS endpoint the backend POSTs to. It verifies the
@@ -17,19 +18,52 @@ import modal
 app = modal.App("rem-pipeline")
 
 # ---------------------------------------------------------------------------
-#  Container image. The reconstruction steps need real system tools + CUDA.
-#  COLMAP + ffmpeg come from apt; Python deps from requirements.txt.
+#  Container image — mirrors pipeline/setup_env.sh (the VERIFIED, no-compile
+#  stack). Deploy/serve FROM the pipeline/ dir so relative paths resolve:
+#       cd pipeline && modal deploy app.py
 #
-#  ⚠️ gsplat needs a CUDA toolchain to build. If `train_gsplat` fails to import,
-#     switch the base to an NVIDIA CUDA devel image, e.g.:
-#       modal.Image.from_registry("nvidia/cuda:12.4.1-devel-ubuntu22.04",
-#                                  add_python="3.11")
-#     then .apt_install(...).pip_install_from_requirements(...).  [P4 owns this]
+#  Why NOT debian_slim + apt colmap + pip gsplat (the old, broken version):
+#    • gsplat has no clean source build here — we must use the PREBUILT wheel,
+#      which exists ONLY for Python 3.10 + torch 2.4/cu121 (pip would otherwise
+#      try to compile gsplat → the build tar pit).
+#    • apt colmap is CPU-only; setup_env.sh uses the conda-forge CUDA build.
+#  So: micromamba (py3.10) + conda-forge colmap/ffmpeg + pip torch + gsplat wheel.
 # ---------------------------------------------------------------------------
 image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .apt_install("colmap", "ffmpeg", "git")
+    modal.Image.micromamba(python_version="3.10")
+    # The build node has no GPU, so conda's __cuda probe is empty and it would
+    # resolve the CPU colmap. Declaring a driver CUDA lets it prefer the CUDA
+    # build (and fall back to CPU if no compatible CUDA build exists — which is
+    # fine: high_quality extraction is CPU DSP-SIFT anyway, GPU only speeds
+    # matching). Bump this if you want to force a newer CUDA colmap.
+    .env({"CONDA_OVERRIDE_CUDA": "12.4"})
+    .micromamba_install("colmap", "ffmpeg", channels=["conda-forge"])
+    # torch from its own index, THEN the prebuilt gsplat wheel. Deps are
+    # pre-installed first so gsplat's single-index install doesn't need to
+    # resolve them. Nothing compiles.
+    .pip_install("torch==2.4.1", "torchvision==0.19.1",
+                 index_url="https://download.pytorch.org/whl/cu121")
+    .pip_install("ninja", "numpy<2.0.0", "jaxtyping", "rich")
+    .pip_install("gsplat==1.5.3", index_url="https://docs.gsplat.studio/whl/pt24cu121")
     .pip_install_from_requirements("requirements.txt")
+    # simple_trainer.py ships in the gsplat REPO (not the wheel) — clone it pinned
+    # to the wheel's version, and install its example deps MINUS everything that
+    # compiles CUDA (fused_ssim is shimmed just below).
+    .run_commands(
+        "git clone --depth 1 --branch v1.5.3 "
+        "https://github.com/nerfstudio-project/gsplat.git /opt/gsplat",
+        "grep -vE 'fused-ssim|fused_ssim|fused-bilagrid|ppisp|nvidia-ncore|"
+        "rahul-goel|harry7557558|nv-tlabs' /opt/gsplat/examples/requirements.txt "
+        "> /tmp/ex.txt && pip install -r /tmp/ex.txt",
+    )
+    # our pipeline source + the pure-Python fused_ssim shim (so the trainer's
+    # `from fused_ssim import fused_ssim` resolves without compiling).
+    .add_local_dir(".", "/root/pipeline", copy=True,
+                   ignore=["**/__pycache__", "**/*.pyc", "third_party/**"])
+    .run_commands("cp /root/pipeline/fused_ssim_shim.py /opt/gsplat/examples/fused_ssim.py")
+    # train_gsplat reads GSPLAT_REPO; run() imports run_pipeline from here.
+    .env({"GSPLAT_REPO": "/opt/gsplat", "PYTHONPATH": "/root/pipeline"})
+    .workdir("/root/pipeline")
 )
 
 # Secrets (set once):
