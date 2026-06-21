@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import IngestScreen from "@/components/ingest-screen";
 import LoadingScreen from "@/components/loading-screen";
-import MemoryViewer from "@/components/memory-viewer";
+import MemoryViewer, { type CameraState } from "@/components/memory-viewer";
 import {
   DEMO_MEMORIES,
   buildDemoMemory,
@@ -22,6 +22,8 @@ export default function Home() {
   const [activeMemory, setActiveMemory] = useState<DemoMemory | null>(null);
   const [pending, setPending] = useState<DemoMemory | null>(null);
   const [washing, setWashing] = useState(false);
+  // Per-memory camera pose, so re-entering a scene drops you where you left off.
+  const [cameraStates, setCameraStates] = useState<Record<string, CameraState>>({});
   const createdCount = useRef(0);
 
   // Cinematic screen swap: fade a cream wash over the screen, swap the view
@@ -64,9 +66,15 @@ export default function Home() {
     });
   }, [pending, transitionTo]);
 
-  const handleReturn = useCallback(() => {
-    transitionTo("grid", () => setActiveMemory(null));
-  }, [transitionTo]);
+  const handleReturn = useCallback(
+    (state?: CameraState) => {
+      if (activeMemory && state) {
+        setCameraStates((prev) => ({ ...prev, [activeMemory.id]: state }));
+      }
+      transitionTo("grid", () => setActiveMemory(null));
+    },
+    [activeMemory, transitionTo],
+  );
 
   // Inside the viewer, jump to a related memory's scene without leaving.
   const handleSelectRelated = useCallback(
@@ -113,6 +121,7 @@ export default function Home() {
             date={activeMemory.date}
             accent={activeMemory.colorProfile.accent}
             related={related}
+            savedCameraState={cameraStates[activeMemory.id]}
             onSelectRelated={handleSelectRelated}
             onReturn={handleReturn}
           />

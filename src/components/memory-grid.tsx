@@ -439,11 +439,6 @@ export default function GridScene({
     [slots],
   );
 
-  const distinctPaths = useMemo(
-    () => Array.from(new Set(tourStops.map((s) => s.path))),
-    [tourStops],
-  );
-
   // Auto-advance the spotlight; hovering a tile overrides the current stop.
   const [stop, setStop] = useState(0);
   const [hoverSlot, setHoverSlot] = useState<number | null>(null);
@@ -499,14 +494,11 @@ export default function GridScene({
         );
       })}
 
-      {distinctPaths.map((p) => (
-        <SplatPreview
-          key={p}
-          url={p}
-          target={previewTarget}
-          visible={activeUrl === p}
-        />
-      ))}
+      {/* Only the active scene is loaded/rendered — it's disposed when the tour
+          moves on, so the huge real .ply files never pile up in memory. */}
+      {activeUrl && (
+        <SplatPreview key={activeUrl} url={activeUrl} target={previewTarget} visible />
+      )}
 
       <ParticleDust />
     </group>

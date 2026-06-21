@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import * as THREE from "three";
+
+/** Camera pose persisted per-memory so you re-enter where you left off. */
+export interface CameraState {
+  position: [number, number, number];
+  lookAt: [number, number, number];
+}
 
 interface RelatedMemory {
   id: string;
@@ -15,18 +22,47 @@ interface MemoryViewerProps {
   date?: string;
   accent?: string;
   related?: RelatedMemory[];
+  savedCameraState?: CameraState;
   onSelectRelated?: (id: string) => void;
-  onReturn: () => void;
+  onReturn: (cameraState?: CameraState) => void;
 }
 
 const CONTROLS_MAP = [
-  { key: "W / S", action: "Move Up / Down" },
+  { key: "W / S", action: "Forward / Back" },
+  { key: "Q / E", action: "Up / Down" },
   { key: "A / D", action: "Strafe" },
   { key: "Drag", action: "Look Around" },
   { key: "Scroll", action: "Zoom" },
 ] as const;
 
 const DEFAULT_ACCENT = "#5B89A6";
+
+// Free-fly movement speed (scene units / frame). Tune if walking feels too
+// fast/slow for these scenes.
+const MOVE_SPEED = 0.02;
+const MOVE_CODES = new Set(["KeyW", "KeyS", "KeyA", "KeyD", "KeyQ", "KeyE"]);
+
+// Minimal shapes for the splat viewer's camera + orbit controls.
+interface OrbitLike {
+  target: THREE.Vector3;
+  minPolarAngle: number;
+  maxPolarAngle: number;
+  minDistance: number;
+  maxDistance: number;
+  panSpeed: number;
+  keyPanSpeed: number;
+  zoomSpeed: number;
+  zoomToCursor: boolean;
+  keys: { LEFT: string; UP: string; RIGHT: string; BOTTOM: string };
+}
+interface SplatViewer {
+  camera?: THREE.PerspectiveCamera;
+  perspectiveControls?: OrbitLike;
+  orthographicControls?: OrbitLike;
+  start(): void;
+  dispose(): void;
+  addSplatScene(url: string, opts?: { progressiveLoad?: boolean }): Promise<void>;
+}
 
 export default function MemoryViewer({
   src,
@@ -35,18 +71,38 @@ export default function MemoryViewer({
   date,
   accent = DEFAULT_ACCENT,
   related = [],
+  savedCameraState,
   onSelectRelated,
   onReturn,
 }: MemoryViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<{ dispose: () => void } | null>(null);
+  const viewerRef = useRef<SplatViewer | null>(null);
+  // The saved pose to enter with — captured once at mount (the parent remounts
+  // this component per memory via `key`).
+  const savedRef = useRef(savedCameraState);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hudVisible, setHudVisible] = useState(true);
-  // The title card shows on entry, then fades away on its own. (The parent
-  // remounts this component per scene via `key`, so initial state is fresh and
-  // we don't need to reset it across `src` changes.)
+  // The title card shows on entry, then fades away on its own.
   const [showTitleCard, setShowTitleCard] = useState(true);
+
+  // Read the current camera pose out of the live viewer.
+  const getCameraState = useCallback((): CameraState | undefined => {
+    const v = viewerRef.current;
+    const cam = v?.camera;
+    if (!cam) return undefined;
+    const ctrl = v?.perspectiveControls || v?.orthographicControls;
+    const target = ctrl?.target;
+    return {
+      position: [cam.position.x, cam.position.y, cam.position.z],
+      lookAt: target ? [target.x, target.y, target.z] : [0, 0, 0],
+    };
+  }, []);
+
+  // Returning hands the current pose back up so it can be restored on re-entry.
+  const handleReturn = useCallback(() => {
+    onReturn(getCameraState());
+  }, [onReturn, getCameraState]);
 
   useEffect(() => {
     const t = setTimeout(() => setShowTitleCard(false), 4200);
@@ -57,6 +113,55 @@ export default function MemoryViewer({
     if (typeof window === "undefined" || !containerRef.current) return;
 
     let disposed = false;
+    let raf = 0;
+    const pressed = new Set<string>();
+
+    // ---- Free-fly movement: W/S forward-back, Q/E up-down, A/D strafe -------
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (MOVE_CODES.has(e.code)) {
+        pressed.add(e.code);
+        e.preventDefault();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => pressed.delete(e.code);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+
+    const fwd = new THREE.Vector3();
+    const up = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const move = new THREE.Vector3();
+
+    const applyMovement = () => {
+      const v = viewerRef.current;
+      const cam = v?.camera;
+      const ctrl = v?.perspectiveControls || v?.orthographicControls;
+      if (!cam || !ctrl || pressed.size === 0) return;
+
+      fwd.subVectors(ctrl.target, cam.position).normalize();
+      up.copy(cam.up).normalize();
+      right.crossVectors(fwd, up).normalize();
+      move.set(0, 0, 0);
+      if (pressed.has("KeyW")) move.add(fwd);
+      if (pressed.has("KeyS")) move.sub(fwd);
+      if (pressed.has("KeyQ")) move.add(up);
+      if (pressed.has("KeyE")) move.sub(up);
+      if (pressed.has("KeyD")) move.add(right);
+      if (pressed.has("KeyA")) move.sub(right);
+      if (move.lengthSq() === 0) return;
+
+      move.normalize().multiplyScalar(MOVE_SPEED);
+      // Translate camera AND target together → we dolly/fly without changing the
+      // orbit angle (so drag-to-look still works around the new spot).
+      cam.position.add(move);
+      ctrl.target.add(move);
+    };
+
+    const loop = () => {
+      applyMovement();
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
 
     const initViewer = async () => {
       try {
@@ -69,23 +174,27 @@ export default function MemoryViewer({
         const viewer = new GaussianSplats3D.Viewer({
           rootElement: containerRef.current,
           cameraUp: [0, -1, 0],
-          initialCameraPosition: [1, -1, 6],
-          initialCameraLookAt: [0, 0, 0],
+          initialCameraPosition: savedRef.current?.position ?? [1, -1, 6],
+          initialCameraLookAt: savedRef.current?.lookAt ?? [0, 0, 0],
           gpuAcceleratedSort: false,
           sharedMemoryForWorkers: false,
-        });
+        }) as unknown as SplatViewer;
 
         viewerRef.current = viewer;
 
-        const v = viewer as unknown as {
-          perspectiveControls?: { panSpeed: number; keyPanSpeed: number };
-          orthographicControls?: { panSpeed: number; keyPanSpeed: number };
-        };
-        for (const ctrl of [v.perspectiveControls, v.orthographicControls]) {
-          if (ctrl) {
-            ctrl.panSpeed = 3.0;
-            ctrl.keyPanSpeed = 40.0;
-          }
+        // Open the controls up: full look up/down, free dolly, and hand W/A/S/D
+        // off to our movement handler (clear the built-in key-pan bindings).
+        for (const ctrl of [viewer.perspectiveControls, viewer.orthographicControls]) {
+          if (!ctrl) continue;
+          ctrl.panSpeed = 3.0;
+          ctrl.keyPanSpeed = 40.0;
+          ctrl.zoomSpeed = 1.2;
+          ctrl.zoomToCursor = true; // dolly toward the cursor, not the center
+          ctrl.minPolarAngle = 0.01;
+          ctrl.maxPolarAngle = Math.PI - 0.01;
+          ctrl.minDistance = 0.01;
+          ctrl.maxDistance = 1000;
+          ctrl.keys = { LEFT: "None", UP: "None", RIGHT: "None", BOTTOM: "None" };
         }
 
         const splatUrl = src || "/sample_memory.splat";
@@ -109,6 +218,9 @@ export default function MemoryViewer({
 
     return () => {
       disposed = true;
+      cancelAnimationFrame(raf);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
       if (viewerRef.current) {
         try {
           viewerRef.current.dispose();
@@ -154,7 +266,7 @@ export default function MemoryViewer({
             <code className="text-[#2A323B]">/public</code>
           </p>
           <button
-            onClick={onReturn}
+            onClick={handleReturn}
             className="mt-4 text-[10px] tracking-[0.3em] uppercase text-[#2A323B] hover:text-[#3E6E8E] transition-colors border-b border-[#D3DBE3] pb-1"
           >
             Return
@@ -196,7 +308,7 @@ export default function MemoryViewer({
         >
           {/* Return button */}
           <button
-            onClick={onReturn}
+            onClick={handleReturn}
             className="glass-dark pointer-events-auto flex items-center gap-3 rounded-full px-5 py-3 text-[10px] tracking-[0.2em] uppercase text-white/85 hover:text-white transition-all animate-fade-in-down"
           >
             <span className="text-lg leading-none font-serif">←</span>

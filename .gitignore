@@ -62,3 +62,4 @@ pipeline/third_party
 
 # generated per-memory scene splats (build artifacts, not source)
 public/scenes/
+public/real_use
