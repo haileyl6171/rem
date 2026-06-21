@@ -12,8 +12,10 @@
 // ============================================================================
 
 import "server-only";
+import { traceChain, withSpan } from "@arizeai/phoenix-otel";
 import { getConnectedRedisClient } from "@/lib/redis";
 import { embed, EMBED_DIM } from "@/lib/embeddings";
+import { retrieverSpanOptions } from "@/lib/tracing";
 
 // node-redis renamed its schema enums between v4 (SchemaFieldTypes /
 // VectorAlgorithms) and v6 (SCHEMA_FIELD_TYPE / SCHEMA_VECTOR_FIELD_ALGORITHM).
@@ -88,88 +90,91 @@ function toBlob(vec: number[]): Buffer {
  * Store (or refresh) a memory's embedding so it shows up in similarity search.
  * Call this on create and whenever the description changes.
  */
-export async function indexMemory(input: {
-  id: string;
-  description: string;
-  status?: string;
-  splat_url?: string | null;
-  created_at?: string;
-}): Promise<void> {
-  if (!input.description?.trim()) return; // nothing to embed
-  await ensureIndex();
-  const client = await getConnectedRedisClient();
-  const vec = await embed(input.description, "document");
+export const indexMemory = traceChain(
+  async function indexMemory(input: {
+    id: string;
+    description: string;
+    status?: string;
+    splat_url?: string | null;
+    created_at?: string;
+  }): Promise<void> {
+    if (!input.description?.trim()) return;
+    await ensureIndex();
+    const client = await getConnectedRedisClient();
+    const vec = await embed(input.description, "document");
 
-  await client.hSet(PREFIX + input.id, {
-    id: input.id,
-    description: input.description,
-    status: input.status ?? "PENDING",
-    splat_url: input.splat_url ?? "",
-    created_at: input.created_at
-      ? String(Date.parse(input.created_at))
-      : String(Date.now()),
-  });
-  // Vector is a binary field — set it separately as a Buffer.
-  await client.hSet(PREFIX + input.id, { embedding: toBlob(vec) });
-}
+    await client.hSet(PREFIX + input.id, {
+      id: input.id,
+      description: input.description,
+      status: input.status ?? "PENDING",
+      splat_url: input.splat_url ?? "",
+      created_at: input.created_at
+        ? String(Date.parse(input.created_at))
+        : String(Date.now()),
+    });
+    await client.hSet(PREFIX + input.id, { embedding: toBlob(vec) });
+  },
+  { name: "index-memory" },
+);
 
 /** Run a KNN search for the given query vector, returning up to `k` neighbors. */
-async function knn(
-  queryVec: number[],
-  k: number,
-  excludeId?: string,
-): Promise<SimilarMemory[]> {
-  await ensureIndex();
-  const client = await getConnectedRedisClient();
-  const fetchN = excludeId ? k + 1 : k; // grab one extra so we can drop self
+const knn = withSpan(
+  async function knn(
+    queryVec: number[],
+    k: number,
+    excludeId?: string,
+  ): Promise<SimilarMemory[]> {
+    await ensureIndex();
+    const client = await getConnectedRedisClient();
+    const fetchN = excludeId ? k + 1 : k;
 
-  const result = await client.ft.search(
-    INDEX,
-    `*=>[KNN ${fetchN} @embedding $BLOB AS score]`,
-    {
-      PARAMS: { BLOB: toBlob(queryVec) },
-      SORTBY: "score", // cosine distance ascending → closest first
-      DIALECT: 2,
-      RETURN: ["score", "id", "description", "status", "splat_url"],
-      LIMIT: { from: 0, size: fetchN },
-    },
-  );
+    const result = await client.ft.search(
+      INDEX,
+      `*=>[KNN ${fetchN} @embedding $BLOB AS score]`,
+      {
+        PARAMS: { BLOB: toBlob(queryVec) },
+        SORTBY: "score",
+        DIALECT: 2,
+        RETURN: ["score", "id", "description", "status", "splat_url"],
+        LIMIT: { from: 0, size: fetchN },
+      },
+    );
 
-  return result.documents
-    .map((doc) => {
-      const v = doc.value as Record<string, string>;
-      const distance = parseFloat(v.score ?? "1");
-      return {
-        id: v.id,
-        description: v.description ?? "",
-        status: v.status ?? "",
-        splat_url: v.splat_url ? v.splat_url : null,
-        score: 1 - distance, // cosine distance → similarity
-      };
-    })
-    .filter((m) => m.id && m.id !== excludeId)
-    .slice(0, k);
-}
+    return result.documents
+      .map((doc) => {
+        const v = doc.value as Record<string, string>;
+        const distance = parseFloat(v.score ?? "1");
+        return {
+          id: v.id,
+          description: v.description ?? "",
+          status: v.status ?? "",
+          splat_url: v.splat_url ? v.splat_url : null,
+          score: 1 - distance,
+        };
+      })
+      .filter((m) => m.id && m.id !== excludeId)
+      .slice(0, k);
+  },
+  retrieverSpanOptions(),
+);
 
-/**
- * "Find memories like this one." Re-embeds the given memory's description and
- * returns the most semantically similar OTHER memories.
- */
-export async function findSimilarMemories(
-  source: { id: string; description: string },
-  k = 6,
-): Promise<SimilarMemory[]> {
-  if (!source.description?.trim()) return [];
-  const vec = await embed(source.description, "query");
-  return knn(vec, k, source.id);
-}
+export const findSimilarMemories = traceChain(
+  async function findSimilarMemories(
+    source: { id: string; description: string },
+    k = 6,
+  ): Promise<SimilarMemory[]> {
+    if (!source.description?.trim()) return [];
+    const vec = await embed(source.description, "query");
+    return knn(vec, k, source.id);
+  },
+  { name: "find-similar-memories" },
+);
 
-/** Free-text semantic search across all memories (for a search bar). */
-export async function searchMemories(
-  text: string,
-  k = 6,
-): Promise<SimilarMemory[]> {
-  if (!text.trim()) return [];
-  const vec = await embed(text, "query");
-  return knn(vec, k);
-}
+export const searchMemories = traceChain(
+  async function searchMemories(text: string, k = 6): Promise<SimilarMemory[]> {
+    if (!text.trim()) return [];
+    const vec = await embed(text, "query");
+    return knn(vec, k);
+  },
+  { name: "search-memories" },
+);
