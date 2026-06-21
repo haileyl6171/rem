@@ -27,6 +27,17 @@ const ALGO = { HNSW: "HNSW" } as const;
 const INDEX = "idx:memories";
 const PREFIX = "memory:";
 
+// ---------------------------------------------------------------------------
+//  Relevance threshold — the Arize feedback loop, made real.
+//  The LLM-as-judge evaluator (src/lib/evaluator.ts) found that low-similarity
+//  KNN neighbors are usually judged "not_relevant" and drag precision down.
+//  So we drop neighbors whose cosine similarity is below this cutoff before
+//  showing them to users. Chosen from the eval data; override via env.
+//  Pass { minScore: 0 } to bypass it (the evaluator does this to measure the
+//  honest baseline vs. the filtered set). See ARIZE.md.
+// ---------------------------------------------------------------------------
+export const MIN_RELEVANCE = Number(process.env.MEMORY_RELEVANCE_THRESHOLD ?? 0.6);
+
 /** A neighbor returned by the similarity search. */
 export interface SimilarMemory {
   id: string;
@@ -123,10 +134,16 @@ const knn = withSpan(
     queryVec: number[],
     k: number,
     excludeId?: string,
+    opts?: { minScore?: number },
   ): Promise<SimilarMemory[]> {
     await ensureIndex();
     const client = await getConnectedRedisClient();
-    const fetchN = excludeId ? k + 1 : k;
+    const minScore = opts?.minScore ?? 0;
+
+    // When filtering, over-fetch a candidate pool so a full set of k *strong*
+    // matches survives the cutoff instead of just truncating the top-k.
+    const base = excludeId ? k + 1 : k;
+    const fetchN = minScore > 0 ? Math.max(base, k * 4) : base;
 
     const result = await client.ft.search(
       INDEX,
@@ -153,6 +170,8 @@ const knn = withSpan(
         };
       })
       .filter((m) => m.id && m.id !== excludeId)
+      // ↓ The Arize-driven improvement: drop weak matches the judge flags.
+      .filter((m) => m.score >= minScore)
       .slice(0, k);
   },
   retrieverSpanOptions(),
@@ -162,10 +181,12 @@ export const findSimilarMemories = traceChain(
   async function findSimilarMemories(
     source: { id: string; description: string },
     k = 6,
+    opts?: { minScore?: number },
   ): Promise<SimilarMemory[]> {
     if (!source.description?.trim()) return [];
+    const minScore = opts?.minScore ?? MIN_RELEVANCE;
     const vec = await embed(source.description, "query");
-    return knn(vec, k, source.id);
+    return knn(vec, k, source.id, { minScore });
   },
   { name: "find-similar-memories" },
 );

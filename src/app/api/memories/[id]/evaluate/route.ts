@@ -13,9 +13,14 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
-import { context, setMetadata, traceChain } from "@arizeai/phoenix-otel";
+import {
+  context,
+  getMetadataAttributes,
+  setMetadata,
+  traceChain,
+} from "@arizeai/phoenix-otel";
 import { getMemory } from "@/lib/db";
-import { findSimilarMemories } from "@/lib/memory-search";
+import { findSimilarMemories, MIN_RELEVANCE } from "@/lib/memory-search";
 import { evaluateRelevance, type RelevanceJudgment } from "@/lib/evaluator";
 
 export const runtime = "nodejs";
@@ -26,12 +31,20 @@ interface JudgedNeighbor extends RelevanceJudgment {
   retrieval_score: number; // cosine similarity from Redis KNN
 }
 
+const precision = (judged: JudgedNeighbor[]) =>
+  judged.length > 0
+    ? judged.filter((j) => j.label === "relevant").length / judged.length
+    : 0;
+
 // One traced unit of work: retrieve neighbors, judge each, aggregate.
 const evaluateSimilarity = traceChain(
   async (source: { id: string; description: string }, k: number) => {
+    // Judge the RAW top-k (minScore: 0) so weak matches are still scored —
+    // that's what lets us prove the Arize-driven filter raises precision.
     const neighbors = await findSimilarMemories(
       { id: source.id, description: source.description },
       k,
+      { minScore: 0 },
     );
 
     const judged: JudgedNeighbor[] = [];
@@ -48,24 +61,54 @@ const evaluateSimilarity = traceChain(
       });
     }
 
-    const relevant = judged.filter((j) => j.label === "relevant");
     const meanScore =
       judged.length > 0
         ? judged.reduce((s, j) => s + j.score, 0) / judged.length
         : 0;
+
+    // Baseline (all k) vs. what the live app now serves (score >= threshold).
+    const kept = judged.filter((j) => j.retrieval_score >= MIN_RELEVANCE);
+    const relevanceAtK = Number(precision(judged).toFixed(3));
+    const relevanceAtKFiltered = Number(precision(kept).toFixed(3));
 
     return {
       memory_id: source.id,
       source_description: source.description,
       k,
       evaluated: judged.length,
-      relevant_count: relevant.length,
-      relevance_at_k: judged.length > 0 ? relevant.length / judged.length : 0,
+      relevant_count: judged.filter((j) => j.label === "relevant").length,
+      relevance_at_k: relevanceAtK,
+      relevance_threshold: MIN_RELEVANCE,
+      relevance_at_k_filtered: relevanceAtKFiltered,
+      kept_count: kept.length,
+      dropped_count: judged.length - kept.length,
       mean_relevance_score: Number(meanScore.toFixed(3)),
       results: judged,
     };
   },
-  { name: "evaluate-similarity" },
+  {
+    name: "evaluate-similarity",
+    // ↓ Surface the aggregate KPI in Arize so the improvement is queryable
+    //   there, not just in the terminal — "Arize output, valuably used".
+    processOutput: (r: {
+      relevance_at_k: number;
+      relevance_at_k_filtered: number;
+      relevance_threshold: number;
+      mean_relevance_score: number;
+      evaluated: number;
+      kept_count: number;
+      dropped_count: number;
+    }) =>
+      getMetadataAttributes({
+        relevance_at_k: r.relevance_at_k,
+        relevance_at_k_filtered: r.relevance_at_k_filtered,
+        relevance_threshold: r.relevance_threshold,
+        mean_relevance_score: r.mean_relevance_score,
+        evaluated: r.evaluated,
+        kept_count: r.kept_count,
+        dropped_count: r.dropped_count,
+      }),
+  },
 );
 
 export async function GET(
