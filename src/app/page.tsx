@@ -9,7 +9,7 @@ type ViewState = "input" | "loading" | "viewer";
 
 interface MemoryData {
   description: string;
-  imageFile: File | null;
+  imageFiles: File[];
 }
 
 const DEMO_MEMORIES: MemoryEntry[] = [
@@ -27,17 +27,19 @@ export default function Home() {
   const [view, setView] = useState<ViewState>("input");
   const [memoryData, setMemoryData] = useState<MemoryData>({
     description: "",
-    imageFile: null,
+    imageFiles: [],
   });
 
   const handleGenerate = useCallback(
-    (description: string, imageFile: File | null) => {
-      setMemoryData({ description, imageFile });
+    (description: string, imageFiles: File[]) => {
+      setMemoryData({ description, imageFiles });
       setView("loading");
 
       const form = new FormData();
       form.append("description", description);
-      if (imageFile) form.append("photo", imageFile);
+      for (const file of imageFiles) {
+        form.append("photos", file);
+      }
 
       fetch("/api/memories", { method: "POST", body: form })
         .then(async (res) => {
@@ -62,19 +64,19 @@ export default function Home() {
   }, []);
 
   const handleReturn = useCallback(() => {
-    setMemoryData({ description: "", imageFile: null });
+    setMemoryData({ description: "", imageFiles: [] });
     setView("input");
   }, []);
 
   return (
     <main className="h-full w-full">
-      {view === "input" && (
+      <div className={view === "input" ? "h-full w-full" : "hidden"}>
         <IngestScreen
           memories={DEMO_MEMORIES}
           onMemoryClick={handleMemoryClick}
           onGenerate={handleGenerate}
         />
-      )}
+      </div>
       {view === "loading" && (
         <LoadingScreen
           description={memoryData.description}

@@ -24,11 +24,13 @@ const handleCreateMemory = traceChain(
   async (request: Request) => {
     const form = await request.formData();
     const description = String(form.get("description") ?? "").trim();
-    const photo = form.get("photo");
+    const photos = form.getAll("photos").filter(
+      (entry): entry is File => entry instanceof File && entry.size > 0,
+    );
 
-    if (!description && !photo) {
+    if (photos.length < 3) {
       return NextResponse.json(
-        { error: "Provide a description and/or a photo." },
+        { error: "At least 3 photos are required." },
         { status: 400 },
       );
     }
@@ -37,7 +39,7 @@ const handleCreateMemory = traceChain(
 
     return withMemoryTrace(id, async () => {
       const inputKeys: string[] = [];
-      if (photo instanceof File && photo.size > 0) {
+      for (const photo of photos) {
         inputKeys.push(await uploadInput(id, photo));
       }
 

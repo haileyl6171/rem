@@ -26,7 +26,7 @@ interface IngestScreenProps {
   memories?: MemoryEntry[];
   onNewMemoryClick?: () => void;
   onMemoryClick?: (id: string) => void;
-  onGenerate?: (description: string, imageFile: File | null) => void;
+  onGenerate?: (description: string, imageFiles: File[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,8 +276,8 @@ function MemoryTile({
     return c;
   }, [accentColor]);
 
-  const noRaycast = useCallback((self: THREE.Object3D) => {
-    self.raycast = () => {};
+  const noRaycast = useCallback((self: THREE.Object3D | null) => {
+    if (self) self.raycast = () => {};
   }, []);
 
   return (
@@ -720,6 +720,8 @@ export default function IngestScreen({
 }: IngestScreenProps) {
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
+  const [photos, setPhotos] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleNewMemory = useCallback(() => {
     if (onNewMemoryClick) {
@@ -729,12 +731,25 @@ export default function IngestScreen({
     }
   }, [onNewMemoryClick, onGenerate]);
 
+  const handlePhotosChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files) return;
+      setPhotos((prev) => [...prev, ...Array.from(e.target.files!)]);
+    },
+    [],
+  );
+
+  const removePhoto = useCallback((index: number) => {
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   const handleSubmit = useCallback(() => {
-    if (!description.trim()) return;
-    onGenerate?.(description.trim(), null);
+    if (photos.length < 3) return;
+    onGenerate?.(description.trim(), photos);
     setDescription("");
+    setPhotos([]);
     setShowForm(false);
-  }, [description, onGenerate]);
+  }, [description, photos, onGenerate]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#F5F2ED]">
@@ -803,8 +818,59 @@ export default function IngestScreen({
       {showForm && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
           <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
-            <label className="mb-4 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+            {/* Photo upload — mandatory, min 3 */}
+            <label className="mb-2 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+              Upload photos of the scene
+              <span className="ml-1 text-[#C86B3C]">
+                ({photos.length}/3 minimum)
+              </span>
+            </label>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handlePhotosChange}
+              className="hidden"
+            />
+
+            {photos.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {photos.map((file, i) => (
+                  <div
+                    key={`${file.name}-${i}`}
+                    className="group relative h-16 w-16 overflow-hidden border border-[#4A4035]"
+                  >
+                    <img
+                      src={URL.createObjectURL(file)}
+                      alt={file.name}
+                      className="h-full w-full object-cover"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removePhoto(i)}
+                      className="absolute inset-0 flex items-center justify-center bg-[#2A2520]/70 text-[#D8C8A8] opacity-0 transition-opacity group-hover:opacity-100"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="mb-6 w-full border border-dashed border-[#4A4035] py-4 text-[10px] uppercase tracking-[0.3em] text-[#9A8B7A] transition-colors hover:border-[#C86B3C] hover:text-[#D8C8A8]"
+            >
+              + Add photos
+            </button>
+
+            {/* Optional description */}
+            <label className="mb-2 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
               Describe the memory
+              <span className="ml-1 text-[#6A5E50]">(optional)</span>
             </label>
             <textarea
               value={description}
@@ -813,10 +879,15 @@ export default function IngestScreen({
               rows={3}
               className="mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]"
             />
+
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={() => {
+                  setShowForm(false);
+                  setPhotos([]);
+                  setDescription("");
+                }}
                 className="flex-1 border border-[#4A4035] py-3 text-[10px] uppercase tracking-[0.3em] text-[#9A8B7A] transition-colors hover:border-[#C86B3C]"
               >
                 Cancel
@@ -824,10 +895,10 @@ export default function IngestScreen({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!description.trim()}
+                disabled={photos.length < 3}
                 className={[
                   "flex-1 py-3 text-[10px] uppercase tracking-[0.3em] transition-all",
-                  description.trim()
+                  photos.length >= 3
                     ? "bg-[#C86B3C] text-white hover:bg-[#A6552D]"
                     : "cursor-not-allowed bg-[#E2DCD0] text-[#A89F96]",
                 ].join(" ")}

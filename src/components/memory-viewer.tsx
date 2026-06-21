@@ -22,25 +22,23 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
   const [hudVisible, setHudVisible] = useState(true);
 
   useEffect(() => {
-    // Guard: only run in browser
     if (typeof window === "undefined" || !containerRef.current) return;
 
     let disposed = false;
+    const host = document.createElement("div");
+    host.style.cssText = "position:absolute;inset:0";
+    containerRef.current.appendChild(host);
 
     const initViewer = async () => {
       try {
-        // Dynamic import keeps the heavy WebGL library out of the SSR bundle
         const GaussianSplats3D = await import(
           "@mkkellogg/gaussian-splats-3d"
         );
 
-        if (disposed || !containerRef.current) return;
-
-        // Clear any leftover canvas from React Strict Mode double-mount
-        containerRef.current.innerHTML = "";
+        if (disposed) return;
 
         const viewer = new GaussianSplats3D.Viewer({
-          rootElement: containerRef.current,
+          rootElement: host,
           cameraUp: [0, -1, 0],
           initialCameraPosition: [1, -1, 6],
           initialCameraLookAt: [0, 0, 0],
@@ -90,9 +88,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
         }
         viewerRef.current = null;
       }
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      host.remove();
     };
   }, [src]);
 
