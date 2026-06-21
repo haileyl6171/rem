@@ -10,13 +10,30 @@ import os
 import shutil
 
 import db
+import media
 import storage
+from agents import fix_look
 from steps.compose_scene import compose_scene
 from steps.generate_video import generate_video
 from steps.extract_frames import extract_frames
 from steps.colmap import run_colmap
 from steps.train_gsplat import train_gsplat
 from steps.export import export_splat
+
+
+def _look_from_analysis(analysis: dict) -> str:
+    """Distill the memory's persona look (palette/lighting/mood/motifs) into a
+    short style instruction for fix-my-look — the LOOK, not the scene."""
+    palette = ", ".join((analysis.get("palette") or [])[:4])
+    motifs = ", ".join((analysis.get("motifs") or [])[:3])
+    parts = [
+        analysis.get("lighting"),
+        f"{palette} palette" if palette else None,
+        analysis.get("mood"),
+        motifs or None,
+    ]
+    look = "; ".join(p for p in parts if p)
+    return look or "a warm, cinematic, gently nostalgic grade"
 
 
 def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> None:
@@ -27,18 +44,42 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
     try:
         # ---- GENERATE: journal → coherent prompt → video → frames ----------
         db.set_status(memory_id, "GENERATING", progress=10)
-        image_paths = [storage.download(k, work) for k in input_keys]
+        input_paths = [storage.download(k, work) for k in input_keys]
+        photo_paths = [p for p in input_paths if media.is_image(p)]
+        video_paths = [p for p in input_paths if media.is_video(p)]
+        video_keys = [k for k in input_keys if media.is_video(k)]
 
-        # Agent layer: analyze past memories (Gemini reads the new photos
-        # directly for grounding), evolve the persona, and compose a prompt that
-        # keeps this scene coherent with the person's world. Caches this memory's
-        # scene analysis for future runs. (No Pika/fal credits used here.)
-        prompt, analysis = compose_scene(description, image_paths, memory_id)
+        # Vision grounding: photos directly, or a still pulled from the video so
+        # a video-only memory still feeds the persona layer.
+        vision_inputs = list(photo_paths)
+        if not photo_paths and video_paths:
+            frame = media.extract_first_frame(video_paths[0], f"{work}/vision_frame.jpg")
+            if frame:
+                vision_inputs.append(frame)
+
+        # Agent layer: analyze past memories, evolve the persona, and compose a
+        # prompt/creative look that keeps this scene coherent with the person's
+        # world. Caches this memory's scene analysis for future runs.
+        prompt, analysis = compose_scene(description, vision_inputs, memory_id)
         db.save_analysis(memory_id, analysis)
 
-        video_path = generate_video(                          # [P3] Pika
-            prompt, image_paths, out_path=f"{work}/generated.mp4"
-        )
+        if video_paths:
+            # VIDEO modality: restyle the user's clip to the memory's LOOK
+            # (palette/lighting/mood), preserving its geometry + camera motion,
+            # with Pika fix-my-look. If that's off or fails, fall back to the raw
+            # clip — video still reconstructs.
+            styled = fix_look.fix_look(
+                storage.public_url(video_keys[0]),
+                _look_from_analysis(analysis),
+                out_path=f"{work}/generated.mp4",
+            )
+            video_path = styled or video_paths[0]
+        else:
+            # PHOTO/TEXT modality: synthesize a video with Veo 3.
+            video_path = generate_video(
+                prompt, photo_paths, out_path=f"{work}/generated.mp4"
+            )
+
         frames_dir = extract_frames(                          # [P3] ffmpeg
             video_path, frames_dir=f"{work}/frames"
         )

@@ -4,7 +4,8 @@
 modal                 # orchestration + GPU hosting + the trigger endpoint
 supabase              # DB writes (db.py) + Storage I/O (storage.py)
 google-genai          # agents/ (Gemini text + photo vision) AND veo.py (Veo 3 video generation)
-mcp                    # agents/creative.py — MCP client to the Pika MCP server (creative vision)
+mcp                    # agents/creative.py + agents/fix_look.py — MCP client to the Pika MCP server
+requests               # agents/fix_look.py — download the restyled clip from Pika
 fastapi               # required by @modal.fastapi_endpoint
 
 # --- reconstruction (P4) ---

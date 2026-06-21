@@ -3,8 +3,12 @@
 Write down a moment (and drop a photo or video), and Rem turns it into a 3D
 Gaussian-splat scene you can walk through. Built at the Berkeley AI Hackathon.
 
-Text/photo → creative vision (Pika) → AI video (Veo 3) → frames → COLMAP → gaussian-splat training →
-a `.splat` you explore in the browser.
+Two input modalities, same 3D output:
+- **Text / photo** → creative vision (Pika) → AI video (Veo 3) →
+- **Video** → re-graded to the memory's look (Pika fix-my-look; palette/lighting/mood
+  changed, original geometry + camera motion preserved, so it stays COLMAP-friendly) →
+
+…then → frames → COLMAP → gaussian-splat training → a `.splat` you explore in the browser.
 
 ---
 

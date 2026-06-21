@@ -21,6 +21,21 @@ from pathlib import Path
 OUT_DIR = Path("_localtest")
 
 
+def _open(path: str) -> None:
+    """Best-effort: open the file in the OS default app so you can watch it."""
+    import subprocess
+
+    try:
+        if sys.platform.startswith("win"):
+            os.startfile(path)  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            subprocess.run(["open", path], check=False)
+        else:
+            subprocess.run(["xdg-open", path], check=False)
+    except Exception:  # noqa: BLE001 — opening is a nicety, never fatal
+        pass
+
+
 def load_env(path: str = ".env") -> None:
     p = Path(path)
     if not p.exists():
@@ -83,6 +98,7 @@ def main() -> int:
     print(f"\n→ Rendering with Veo 3 → {video_path} (this can take a few minutes)...")
     generate_video(prompt, images, out_path=video_path)
     print(f"✓ Video saved: {video_path}")
+    _open(video_path)  # pop it open so you can watch the AI video before any splatting
 
     try:
         from steps.extract_frames import extract_frames
