@@ -23,6 +23,26 @@ export default function Home() {
     (description: string, imageFile: File | null) => {
       setMemoryData({ description, imageFile });
       setView("loading");
+
+      // Persist the memory to the backend (Contract A: POST /api/memories).
+      // This is what makes a row appear in Supabase. Fire-and-forget so the
+      // loading → viewer flow continues regardless of the pipeline status.
+      const form = new FormData();
+      form.append("description", description);
+      if (imageFile) form.append("photo", imageFile);
+
+      fetch("/api/memories", { method: "POST", body: form })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            // A 500 here is usually just the Modal pipeline trigger not being
+            // configured yet — the memory row IS still created before that step.
+            console.warn("[create memory] non-OK response:", res.status, body);
+          } else {
+            console.info("[create memory] created:", body.id);
+          }
+        })
+        .catch((err) => console.error("[create memory] request failed:", err));
     },
     []
   );
