@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useRef, useMemo, useState, useCallback } from "react";
-import { Canvas, useFrame, ThreeEvent } from "@react-three/fiber";
+import { Suspense, useRef, useMemo, useState, useCallback, useEffect } from "react";
+import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
 import { Float } from "@react-three/drei";
 import {
   EffectComposer,
@@ -634,6 +634,32 @@ function ParticleDust({ count = 200 }: { count?: number }) {
 }
 
 // ---------------------------------------------------------------------------
+//  AdaptiveCamera — pulls back + widens FOV on portrait viewports
+// ---------------------------------------------------------------------------
+
+const BASE_Z = 4.2;
+const BASE_FOV = 42;
+
+function AdaptiveCamera() {
+  const { camera, size } = useThree();
+
+  useEffect(() => {
+    const aspect = size.width / size.height;
+    const cam = camera as THREE.PerspectiveCamera;
+    if (aspect < 1) {
+      cam.position.z = BASE_Z + (1 - aspect) * 4;
+      cam.fov = BASE_FOV + (1 - aspect) * 18;
+    } else {
+      cam.position.z = BASE_Z;
+      cam.fov = BASE_FOV;
+    }
+    cam.updateProjectionMatrix();
+  }, [camera, size.width, size.height]);
+
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 //  GridScene
 // ---------------------------------------------------------------------------
 
@@ -755,10 +781,11 @@ export default function IngestScreen({
     <div className="relative h-full w-full overflow-hidden bg-[#F5F2ED]">
       <Canvas
         shadows
-        camera={{ position: [0, 0, 4.2], fov: 42 }}
+        camera={{ position: [0, 0, BASE_Z], fov: BASE_FOV }}
         gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
         style={{ position: "absolute", inset: 0 }}
       >
+        <AdaptiveCamera />
         <ambientLight intensity={0.4} />
 
         {/* Dramatic angled sun — casts long crisp shadows */}
@@ -805,19 +832,19 @@ export default function IngestScreen({
       </Canvas>
 
       {/* 2D overlay */}
-      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-8">
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-4 sm:p-8">
         <div className="flex items-end justify-between">
-          <p className="text-[8px] tracking-[0.3em] text-[#6A6258] uppercase">
+          <p className="text-[8px] tracking-[0.3em] text-[#6A6258] uppercase hidden sm:block">
             Powered by 3D Gaussian Splatting
           </p>
-          <h1 className="font-serif text-2xl text-[#6A5D4F]">rem</h1>
+          <h1 className="font-serif text-xl sm:text-2xl text-[#6A5D4F]">rem</h1>
         </div>
       </div>
 
       {/* Inline form overlay */}
       {showForm && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
-          <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm px-4 sm:px-0">
+          <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-5 sm:p-8">
             {/* Photo upload — mandatory, min 3 */}
             <label className="mb-2 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
               Upload photos of the scene

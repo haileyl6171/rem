@@ -67,13 +67,13 @@ export default function LoadingScreen({
   const displayProgress = Math.min(Math.round(progress), 100);
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center px-6 select-none font-sans bg-[#F7F5F0]">
+    <div className="h-full w-full flex flex-col items-center justify-center px-4 sm:px-6 select-none font-sans bg-[#F7F5F0]">
       {/* Logo */}
-      <h1 className="text-5xl font-serif text-[#4A3320] mb-20">
+      <h1 className="text-4xl sm:text-5xl font-serif text-[#4A3320] mb-12 sm:mb-20">
         Rem
       </h1>
 
-      <div className="w-full max-w-md flex flex-col gap-12">
+      <div className="w-full max-w-md flex flex-col gap-8 sm:gap-12">
         {/* Current phase label */}
         <div className="min-h-10 flex items-center justify-center text-center">
           <p

@@ -111,7 +111,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
 
       {/* Error state */}
       {loadError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 bg-[#F7F5F0]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-4 sm:px-8 bg-[#F7F5F0]">
           <p className="text-sm font-serif text-[#C86B3C] text-center max-w-sm">
             {loadError}
           </p>
@@ -132,26 +132,26 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {!loadError && (
         <div
           className={[
-            "absolute inset-x-0 top-0 flex items-start justify-between p-8 pointer-events-none transition-opacity duration-500",
+            "absolute inset-x-0 top-0 flex flex-col sm:flex-row items-start justify-between gap-3 p-4 sm:p-8 pointer-events-none transition-opacity duration-500",
             hudVisible ? "opacity-100" : "opacity-0",
           ].join(" ")}
         >
           {/* Return button */}
           <button
             onClick={onReturn}
-            className="pointer-events-auto flex items-center gap-3 bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[10px] tracking-[0.2em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-all shadow-sm"
+            className="pointer-events-auto flex items-center gap-3 bg-[#F7F5F0] border border-[#E2DCD0] px-4 py-2.5 sm:px-5 sm:py-3 text-[10px] tracking-[0.2em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-all shadow-sm"
           >
             <span className="text-lg leading-none font-serif">←</span>
             Return
           </button>
 
           {/* Controls legend */}
-          <div className="pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-6 py-5 flex flex-col gap-3 shadow-sm min-w-[200px]">
-            <p className="text-[9px] tracking-[0.3em] text-[#B5AD9F] uppercase mb-2 border-b border-[#E2DCD0] pb-2">
+          <div className="pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-4 py-3 sm:px-6 sm:py-5 hidden sm:flex sm:flex-col gap-2 sm:gap-3 shadow-sm min-w-[180px] sm:min-w-[200px]">
+            <p className="text-[9px] tracking-[0.3em] text-[#B5AD9F] uppercase mb-1 sm:mb-2 border-b border-[#E2DCD0] pb-2">
               Controls
             </p>
             {CONTROLS_MAP.map(({ key, action }) => (
-              <div key={key} className="flex items-center justify-between gap-6">
+              <div key={key} className="flex items-center justify-between gap-4 sm:gap-6">
                 <span className="text-[10px] text-[#7A6B63] uppercase tracking-wider">
                   {action}
                 </span>
@@ -168,15 +168,15 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {!loadError && (
         <button
           onClick={() => setHudVisible((v) => !v)}
-          className="absolute bottom-8 right-8 pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[9px] tracking-[0.2em] uppercase text-[#7A6B63] hover:text-[#C86B3C] transition-all shadow-sm"
+          className="absolute bottom-4 right-4 sm:bottom-8 sm:right-8 pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-4 py-2.5 sm:px-5 sm:py-3 text-[9px] tracking-[0.2em] uppercase text-[#7A6B63] hover:text-[#C86B3C] transition-all shadow-sm"
         >
           {hudVisible ? "Hide HUD" : "Show HUD"}
         </button>
       )}
 
       {/* Subtle branding */}
-      <div className="absolute bottom-8 left-8 pointer-events-none">
-        <span className="text-2xl font-serif text-[#F7F5F0]/50">
+      <div className="absolute bottom-4 left-4 sm:bottom-8 sm:left-8 pointer-events-none">
+        <span className="text-xl sm:text-2xl font-serif text-[#F7F5F0]/50">
           Rem
         </span>
       </div>
