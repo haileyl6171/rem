@@ -59,6 +59,89 @@ const TILE_ELEVATIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+//  Haze shaders — warm desert atmosphere behind the grid
+// ---------------------------------------------------------------------------
+
+const HAZE_VERTEX_SHADER = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const HAZE_FRAGMENT_SHADER = /* glsl */ `
+uniform float uTime;
+varying vec2 vUv;
+
+vec3 permute(vec3 x) { return mod(((x * 34.0) + 1.0) * x, 289.0); }
+
+float snoise(vec2 v) {
+  const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                      -0.577350269189626, 0.024390243902439);
+  vec2 i = floor(v + dot(v, C.yy));
+  vec2 x0 = v - i + dot(i, C.xx);
+  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+  vec4 x12 = x0.xyxy + C.xxzz;
+  x12.xy -= i1;
+  i = mod(i, 289.0);
+  vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0))
+                  + i.x + vec3(0.0, i1.x, 1.0));
+  vec3 m = max(0.5 - vec3(dot(x0, x0), dot(x12.xy, x12.xy),
+               dot(x12.zw, x12.zw)), 0.0);
+  m = m * m;
+  m = m * m;
+  vec3 xn = 2.0 * fract(p * C.www) - 1.0;
+  vec3 h = abs(xn) - 0.5;
+  vec3 ox = floor(xn + 0.5);
+  vec3 a0 = xn - ox;
+  m *= 1.79284291400159 - 0.85373472095314 * (a0 * a0 + h * h);
+  vec3 g;
+  g.x = a0.x * x0.x + h.x * x0.y;
+  g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+  return 130.0 * dot(m, g);
+}
+
+void main() {
+  vec2 uv = vUv;
+  float t = uTime * 0.05;
+
+  vec3 warmAmber = vec3(0.85, 0.65, 0.40);
+  vec3 goldenHaze = vec3(0.92, 0.80, 0.58);
+  vec3 deepSand = vec3(0.70, 0.50, 0.30);
+
+  float n1 = snoise(uv * 2.0 + vec2(1.7, t));
+  float n2 = snoise(uv * 4.0 + vec2(5.3, t * 1.2));
+  float n3 = snoise(uv * 8.0 + vec2(9.1, t * 0.8));
+
+  float fog = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2) * 0.5 + 0.5;
+
+  float cv = snoise(uv * 3.0 + vec2(2.0, t * 0.4)) * 0.5 + 0.5;
+  vec3 color = mix(warmAmber, goldenHaze, cv);
+  color = mix(color, deepSand, (1.0 - fog) * 0.3);
+
+  float streak = snoise(vec2(uv.x * 0.8 + uv.y * 1.2, t * 0.25) * 2.5)
+                 * 0.5 + 0.5;
+  streak = smoothstep(0.5, 0.8, streak);
+  color = mix(color, goldenHaze * 1.1, streak * 0.15);
+
+  vec2 c = abs(uv - 0.5);
+  float warpX = snoise(vec2(uv.y * 3.0, t * 0.6)) * 0.03;
+  float warpY = snoise(vec2(uv.x * 3.0 + 50.0, t * 0.5)) * 0.03;
+  float edgeX = smoothstep(0.38, 0.48, c.x + warpX);
+  float edgeY = smoothstep(0.38, 0.48, c.y + warpY);
+  float radial = (1.0 - edgeX) * (1.0 - edgeY);
+
+  float alpha = smoothstep(0.3, 0.7, fog) * radial * 0.32;
+
+  float grain = snoise(uv * 100.0 + uTime) * 0.012;
+  color += grain;
+
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
+// ---------------------------------------------------------------------------
 //  MemoryTile — solid box with standard material
 // ---------------------------------------------------------------------------
 
@@ -263,6 +346,38 @@ function ParticleDust({ count = 120 }: { count?: number }) {
 }
 
 // ---------------------------------------------------------------------------
+//  Desert haze — warm fog plane behind the grid
+// ---------------------------------------------------------------------------
+
+function DesertHaze() {
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  const uniforms = useMemo(
+    () => ({ uTime: { value: 0 } }),
+    [],
+  );
+
+  useFrame((state) => {
+    if (!meshRef.current) return;
+    (meshRef.current.material as THREE.ShaderMaterial).uniforms.uTime.value =
+      state.clock.elapsedTime;
+  });
+
+  return (
+    <mesh ref={meshRef} position={[0, 0.12, -0.05]}>
+      <planeGeometry args={[3.8, 3.8]} />
+      <shaderMaterial
+        vertexShader={HAZE_VERTEX_SHADER}
+        fragmentShader={HAZE_FRAGMENT_SHADER}
+        uniforms={uniforms}
+        transparent
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
+
+// ---------------------------------------------------------------------------
 //  GridScene
 // ---------------------------------------------------------------------------
 
@@ -332,6 +447,7 @@ function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps
         onClick={onNewMemoryClick}
       />
 
+      <DesertHaze />
       <ParticleDust />
     </group>
   );
@@ -366,7 +482,7 @@ export default function IngestScreen({
   }, [description, onGenerate]);
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#F7F5F0]">
+    <div className="relative h-full w-full overflow-hidden bg-[#8B5E3C]">
       <Canvas
         camera={{ position: [0, 0, 4.2], fov: 42 }}
         gl={{ antialias: true, alpha: true, toneMapping: THREE.NoToneMapping }}
@@ -398,18 +514,18 @@ export default function IngestScreen({
       {/* 2D overlay */}
       <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-8">
         <div className="flex items-end justify-between">
-          <p className="text-[8px] tracking-[0.3em] text-[#B5AD9F] uppercase">
+          <p className="text-[8px] tracking-[0.3em] text-[#6A6258] uppercase">
             Powered by 3D Gaussian Splatting
           </p>
-          <h1 className="font-serif text-2xl text-[#4A3320]">rem</h1>
+          <h1 className="font-serif text-2xl text-[#C8B89A]">rem</h1>
         </div>
       </div>
 
       {/* Inline form overlay */}
       {showForm && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#F7F5F0]/80 backdrop-blur-sm">
-          <div className="pointer-events-auto w-full max-w-md border border-[#E2DCD0] bg-[#F7F5F0] p-8">
-            <label className="mb-4 block text-[10px] tracking-[0.2em] text-[#7A6B63] uppercase">
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
+          <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
+            <label className="mb-4 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
               Describe the memory
             </label>
             <textarea
@@ -417,13 +533,13 @@ export default function IngestScreen({
               onChange={(e) => setDescription(e.target.value)}
               placeholder="A sun-drenched afternoon in a quiet garden..."
               rows={3}
-              className="mb-6 w-full resize-none border-none bg-[#EFECE5] px-5 py-4 text-sm leading-relaxed text-[#4A3320] placeholder-[#B5AD9F] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]"
+              className="mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]"
             />
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="flex-1 border border-[#E2DCD0] py-3 text-[10px] uppercase tracking-[0.3em] text-[#7A6B63] transition-colors hover:border-[#C86B3C]"
+                className="flex-1 border border-[#4A4035] py-3 text-[10px] uppercase tracking-[0.3em] text-[#9A8B7A] transition-colors hover:border-[#C86B3C]"
               >
                 Cancel
               </button>
