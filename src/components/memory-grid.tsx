@@ -2,6 +2,7 @@
 
 import { useRef, useMemo, useState, useCallback } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 // ---------------------------------------------------------------------------
@@ -183,6 +184,7 @@ interface TileProps {
   accentColor: string;
   depth: number;
   archetype: string;
+  title?: string;
   onClick?: () => void;
 }
 
@@ -192,6 +194,7 @@ function MemoryTile({
   accentColor,
   depth,
   archetype,
+  title,
   onClick,
 }: TileProps) {
   const groupRef = useRef<THREE.Group>(null);
@@ -337,6 +340,34 @@ function MemoryTile({
       )}
 
       <TileSurfaceParticles baseColor={baseColor} accentColor={accentColor} depth={depth} />
+
+      {title && (
+        <Html
+          position={[0, TILE_SIZE / 2 + 0.12, depth / 2 + 0.02]}
+          center
+          style={{ pointerEvents: "none" }}
+        >
+          <div
+            style={{
+              opacity: hovered ? 1 : 0,
+              transform: hovered
+                ? "translateY(0) scale(1)"
+                : "translateY(8px) scale(0.85)",
+              transition: "opacity 0.25s ease-out, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
+              background: "#2A2520",
+              border: "1px solid #4A4035",
+              padding: "6px 14px",
+              whiteSpace: "nowrap",
+              fontFamily: "var(--font-playfair), serif",
+              fontSize: "11px",
+              color: "#D8C8A8",
+              letterSpacing: "0.04em",
+            }}
+          >
+            {title}
+          </div>
+        </Html>
+      )}
     </group>
   );
 }
@@ -662,6 +693,7 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
             accentColor={palette.accent}
             depth={isFilled ? TILE_DEPTH : TILE_DEPTH_EMPTY}
             archetype={TILE_ARCHETYPES[i]}
+            title={memory?.title}
             onClick={memory ? () => onMemoryClick?.(memory.id) : undefined}
           />
         );
