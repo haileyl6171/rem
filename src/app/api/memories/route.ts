@@ -13,6 +13,7 @@ import { NextResponse } from "next/server";
 import { createMemory, listMemories } from "@/lib/db";
 import { uploadInput } from "@/lib/storage";
 import { triggerPipeline } from "@/lib/modal";
+import { indexMemory } from "@/lib/memory-search";
 import type { CreateMemoryResponse } from "@/types/memory";
 
 export const runtime = "nodejs";
@@ -42,7 +43,17 @@ export async function POST(request: Request) {
     // them in the trigger body. For now we pass them in the trigger (step 3).
   }
 
-  // 3. Fire-and-forget: start the GPU pipeline. Returns fast.
+  // 3. Index the description in Redis for semantic "find similar" search.
+  //    Best-effort: an embedding/Redis hiccup must never block memory creation.
+  if (description) {
+    try {
+      await indexMemory({ id, description, status: "PENDING" });
+    } catch (err) {
+      console.error("[memory-search] index failed for", id, err);
+    }
+  }
+
+  // 4. Fire-and-forget: start the GPU pipeline. Returns fast.
   await triggerPipeline({ memoryId: id, inputKeys, description });
 
   const body: CreateMemoryResponse = { id };

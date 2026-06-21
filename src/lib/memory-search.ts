@@ -1,0 +1,175 @@
+// ============================================================================
+//  Semantic memory search — SERVER ONLY.  ★ THE REDIS FEATURE ★
+//  Owned by P2. "Find memories like this one" via Redis vector similarity.
+//
+//  Redis here is the VECTOR SEARCH ENGINE (not a cache): each memory's
+//  description is embedded (src/lib/embeddings.ts) and stored as a vector in a
+//  RediSearch HNSW index. KNN queries return the most semantically similar
+//  memories. Supabase remains the source of truth for the row data.
+//
+//  Index lives over HASH keys  memory:<id>  with fields:
+//    embedding (FLOAT32[1024], COSINE) · description · status · splat_url · created_at
+// ============================================================================
+
+import "server-only";
+import { getConnectedRedisClient } from "@/lib/redis";
+import { embed, EMBED_DIM } from "@/lib/embeddings";
+
+// node-redis renamed its schema enums between v4 (SchemaFieldTypes /
+// VectorAlgorithms) and v6 (SCHEMA_FIELD_TYPE / SCHEMA_VECTOR_FIELD_ALGORITHM).
+// The underlying values are just the RediSearch keywords, so we use string
+// literals to stay correct across versions. (typed via `as const` below.)
+const FIELD = { VECTOR: "VECTOR", TAG: "TAG", NUMERIC: "NUMERIC" } as const;
+const ALGO = { HNSW: "HNSW" } as const;
+
+const INDEX = "idx:memories";
+const PREFIX = "memory:";
+
+/** A neighbor returned by the similarity search. */
+export interface SimilarMemory {
+  id: string;
+  description: string;
+  status: string;
+  splat_url: string | null;
+  score: number; // cosine similarity in [0,1]; 1 = most similar
+}
+
+// Create the index once per process (cheap to re-check; FT.CREATE is one-time).
+let indexReady: Promise<void> | null = null;
+
+function ensureIndex(): Promise<void> {
+  if (!indexReady) {
+    indexReady = (async () => {
+      const client = await getConnectedRedisClient();
+      try {
+        await client.ft.info(INDEX);
+        return; // already exists
+      } catch {
+        // fall through to create
+      }
+      try {
+        await client.ft.create(
+          INDEX,
+          {
+            embedding: {
+              type: FIELD.VECTOR,
+              ALGORITHM: ALGO.HNSW,
+              TYPE: "FLOAT32",
+              DIM: EMBED_DIM,
+              DISTANCE_METRIC: "COSINE",
+              AS: "embedding",
+            },
+            status: { type: FIELD.TAG, AS: "status" },
+            created_at: {
+              type: FIELD.NUMERIC,
+              AS: "created_at",
+              SORTABLE: true,
+            },
+          },
+          { ON: "HASH", PREFIX },
+        );
+      } catch (err) {
+        // Another request may have created it in the meantime — that's fine.
+        if (!(err instanceof Error) || !/index already exists/i.test(err.message)) {
+          indexReady = null; // let a later call retry on real failures
+          throw err;
+        }
+      }
+    })();
+  }
+  return indexReady;
+}
+
+function toBlob(vec: number[]): Buffer {
+  return Buffer.from(new Float32Array(vec).buffer);
+}
+
+/**
+ * Store (or refresh) a memory's embedding so it shows up in similarity search.
+ * Call this on create and whenever the description changes.
+ */
+export async function indexMemory(input: {
+  id: string;
+  description: string;
+  status?: string;
+  splat_url?: string | null;
+  created_at?: string;
+}): Promise<void> {
+  if (!input.description?.trim()) return; // nothing to embed
+  await ensureIndex();
+  const client = await getConnectedRedisClient();
+  const vec = await embed(input.description, "document");
+
+  await client.hSet(PREFIX + input.id, {
+    id: input.id,
+    description: input.description,
+    status: input.status ?? "PENDING",
+    splat_url: input.splat_url ?? "",
+    created_at: input.created_at
+      ? String(Date.parse(input.created_at))
+      : String(Date.now()),
+  });
+  // Vector is a binary field — set it separately as a Buffer.
+  await client.hSet(PREFIX + input.id, { embedding: toBlob(vec) });
+}
+
+/** Run a KNN search for the given query vector, returning up to `k` neighbors. */
+async function knn(
+  queryVec: number[],
+  k: number,
+  excludeId?: string,
+): Promise<SimilarMemory[]> {
+  await ensureIndex();
+  const client = await getConnectedRedisClient();
+  const fetchN = excludeId ? k + 1 : k; // grab one extra so we can drop self
+
+  const result = await client.ft.search(
+    INDEX,
+    `*=>[KNN ${fetchN} @embedding $BLOB AS score]`,
+    {
+      PARAMS: { BLOB: toBlob(queryVec) },
+      SORTBY: "score", // cosine distance ascending → closest first
+      DIALECT: 2,
+      RETURN: ["score", "id", "description", "status", "splat_url"],
+      LIMIT: { from: 0, size: fetchN },
+    },
+  );
+
+  return result.documents
+    .map((doc) => {
+      const v = doc.value as Record<string, string>;
+      const distance = parseFloat(v.score ?? "1");
+      return {
+        id: v.id,
+        description: v.description ?? "",
+        status: v.status ?? "",
+        splat_url: v.splat_url ? v.splat_url : null,
+        score: 1 - distance, // cosine distance → similarity
+      };
+    })
+    .filter((m) => m.id && m.id !== excludeId)
+    .slice(0, k);
+}
+
+/**
+ * "Find memories like this one." Re-embeds the given memory's description and
+ * returns the most semantically similar OTHER memories.
+ */
+export async function findSimilarMemories(
+  source: { id: string; description: string },
+  k = 6,
+): Promise<SimilarMemory[]> {
+  if (!source.description?.trim()) return [];
+  const vec = await embed(source.description, "query");
+  return knn(vec, k, source.id);
+}
+
+/** Free-text semantic search across all memories (for a search bar). */
+export async function searchMemories(
+  text: string,
+  k = 6,
+): Promise<SimilarMemory[]> {
+  if (!text.trim()) return [];
+  const vec = await embed(text, "query");
+  return knn(vec, k);
+}
