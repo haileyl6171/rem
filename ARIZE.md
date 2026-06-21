@@ -16,8 +16,7 @@ Tracing is registered on server startup in `src/instrumentation.ts` and exported
 to **Arize AX** (`otlp.arize.com`). Every memory creation and similarity search
 already emits spans; the evaluation endpoint emits the judge spans.
 
-## The evaluator (the LLM prompt the judges want to see)
-
+## The evaluator 
 `src/lib/evaluator.ts` is an **LLM-as-judge** (Claude). Given a SOURCE memory and
 a RETRIEVED "similar" memory, it scores whether the match is genuinely relevant:
 
