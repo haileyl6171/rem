@@ -8,9 +8,8 @@ interface MemoryViewerProps {
 }
 
 const CONTROLS_MAP = [
-  { key: "W / S", action: "Move Forward / Back" },
+  { key: "W / S", action: "Move Up / Down" },
   { key: "A / D", action: "Strafe Left / Right" },
-  { key: "Q / E", action: "Move Up / Down" },
   { key: "Drag", action: "Look Around" },
   { key: "Scroll", action: "Zoom" },
 ] as const;
@@ -182,7 +181,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       {/* Subtle branding */}
       <div className="absolute bottom-8 left-8 pointer-events-none">
         <span className="text-2xl font-serif text-[#F7F5F0]/50">
-          Rem
+          rem
         </span>
       </div>
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import IngestScreen from "@/components/ingest-screen";
+import IngestScreen, { type MemoryEntry } from "@/components/ingest-screen";
 import LoadingScreen from "@/components/loading-screen";
 import MemoryViewer from "@/components/memory-viewer";
 
@@ -9,34 +9,40 @@ type ViewState = "input" | "loading" | "viewer";
 
 interface MemoryData {
   description: string;
-  imageFile: File | null;
+  imageFiles: File[];
 }
+
+const DEMO_MEMORIES: MemoryEntry[] = [
+  { id: "1", title: "Golden hour on the porch", colorProfile: { base: "#8B4513", accent: "#A65E2E" } },
+  { id: "2", title: "Morning fog in the valley", colorProfile: { base: "#C87533", accent: "#E09050" } },
+  { id: "3", title: "Rain on the cobblestones", colorProfile: { base: "#A0522D", accent: "#BF6F45" } },
+  { id: "4", title: "Autumn leaves at the creek", colorProfile: { base: "#D4883A", accent: "#E8A060" } },
+  { id: "5", title: "Dusty road at sunset", colorProfile: { base: "#6B3A2A", accent: "#8B5540" } },
+  { id: "6", title: "Old bookshop on Market St", colorProfile: { base: "#CC6B3C", accent: "#E08858" } },
+  { id: "7", title: "Wind through the wheat field", colorProfile: { base: "#8E6540", accent: "#B08560" } },
+  { id: "8", title: "First snow on the rooftop", colorProfile: { base: "#5C3D2E", accent: "#7A5845" } },
+];
 
 export default function Home() {
   const [view, setView] = useState<ViewState>("input");
   const [memoryData, setMemoryData] = useState<MemoryData>({
     description: "",
-    imageFile: null,
+    imageFiles: [],
   });
 
   const handleGenerate = useCallback(
-    (description: string, imageFile: File | null) => {
-      setMemoryData({ description, imageFile });
+    (description: string, imageFiles: File[]) => {
+      setMemoryData({ description, imageFiles });
       setView("loading");
 
-      // Persist the memory to the backend (Contract A: POST /api/memories).
-      // This is what makes a row appear in Supabase. Fire-and-forget so the
-      // loading → viewer flow continues regardless of the pipeline status.
       const form = new FormData();
       form.append("description", description);
-      if (imageFile) form.append("photo", imageFile);
+      imageFiles.forEach((file) => form.append("photos", file));
 
       fetch("/api/memories", { method: "POST", body: form })
         .then(async (res) => {
           const body = await res.json().catch(() => ({}));
           if (!res.ok) {
-            // A 500 here is usually just the Modal pipeline trigger not being
-            // configured yet — the memory row IS still created before that step.
             console.warn("[create memory] non-OK response:", res.status, body);
           } else {
             console.info("[create memory] created:", body.id);
@@ -47,18 +53,28 @@ export default function Home() {
     []
   );
 
+  const handleMemoryClick = useCallback(() => {
+    setView("viewer");
+  }, []);
+
   const handleLoadingComplete = useCallback(() => {
     setView("viewer");
   }, []);
 
   const handleReturn = useCallback(() => {
-    setMemoryData({ description: "", imageFile: null });
+    setMemoryData({ description: "", imageFiles: [] });
     setView("input");
   }, []);
 
   return (
     <main className="h-full w-full">
-      {view === "input" && <IngestScreen onGenerate={handleGenerate} />}
+      {view === "input" && (
+        <IngestScreen
+          memories={DEMO_MEMORIES}
+          onMemoryClick={handleMemoryClick}
+          onGenerate={handleGenerate}
+        />
+      )}
       {view === "loading" && (
         <LoadingScreen
           description={memoryData.description}
