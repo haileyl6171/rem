@@ -20,6 +20,7 @@
 #   not run reconstruction.)
 # ============================================================================
 
+import functools
 import glob
 import logging
 import os
@@ -34,6 +35,20 @@ _IMG_EXT = (".jpg", ".jpeg", ".png")
 def _run(cmd: list[str]) -> None:
     log.info("colmap ▸ %s", " ".join(cmd))
     subprocess.run(cmd, check=True)
+
+
+@functools.lru_cache(maxsize=None)
+def _supports(colmap_bin: str, command: str, option: str) -> bool:
+    """True if `colmap <command> --help` advertises <option>. Keeps us compatible
+    with COLMAP builds that omit the GPU-SIFT options — e.g. headless conda-forge
+    builds that ship CPU/VLFeat SIFT only and reject --SiftExtraction.use_gpu."""
+    try:
+        r = subprocess.run(
+            [colmap_bin, command, "--help"], capture_output=True, text=True
+        )
+        return option in (r.stdout + r.stderr)
+    except Exception:
+        return False
 
 
 def run_colmap(
@@ -74,25 +89,28 @@ def run_colmap(
     log.info("staged %d frames", len(frames))
 
     # 1. feature extraction (one shared camera, OPENCV distortion model) -----
-    _run([
+    feat_cmd = [
         colmap_bin, "feature_extractor",
         "--database_path", db,
         "--image_path", inp,
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", camera_model,
-        "--SiftExtraction.use_gpu", use_gpu,
-    ])
+    ]
+    if _supports(colmap_bin, "feature_extractor", "--SiftExtraction.use_gpu"):
+        feat_cmd += ["--SiftExtraction.use_gpu", use_gpu]
+    else:
+        log.info("COLMAP build lacks --SiftExtraction.use_gpu; using its default (CPU/VLFeat SIFT)")
+    _run(feat_cmd)
 
     # 2. feature matching ----------------------------------------------------
     matcher_cmd = {
         "exhaustive": "exhaustive_matcher",
         "sequential": "sequential_matcher",
     }[matcher]
-    _run([
-        colmap_bin, matcher_cmd,
-        "--database_path", db,
-        "--SiftMatching.use_gpu", use_gpu,
-    ])
+    match_cmd = [colmap_bin, matcher_cmd, "--database_path", db]
+    if _supports(colmap_bin, matcher_cmd, "--SiftMatching.use_gpu"):
+        match_cmd += ["--SiftMatching.use_gpu", use_gpu]
+    _run(match_cmd)
 
     # 3. sparse reconstruction (SfM) → distorted/sparse/0 --------------------
     sparse_distorted = os.path.join(distorted, "sparse")
