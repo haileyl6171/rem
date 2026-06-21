@@ -43,8 +43,8 @@ python pipeline/reconstruct_local.py --video my_clip.mp4 --out ./out
 # from a folder of photos (used directly):
 python pipeline/reconstruct_local.py --images ./my_photos --out ./out
 
-# options: --fps N (downsample; default = ALL frames), --max-steps 7000,
-#          --matcher sequential|exhaustive, --sfm incremental|global, --no-gpu-colmap
+# options: --quality high|fast, --fps N (default = ALL frames), --max-steps N,
+#          --matcher sequential|exhaustive, --sfm incremental|global, --colmap-bin PATH
 ```
 **Output (the one artifact):** `./out/scene.ply` — view it in
 [superspl.at/editor](https://superspl.at/editor) or your `memory-viewer`.
@@ -54,24 +54,28 @@ python pipeline/reconstruct_local.py --images ./my_photos --out ./out
 > to `out/scene.ply` — **always view `scene.ply`** (or that `point_cloud_*.ply`), never a
 > stale leftover.
 
-## GPU & speed
+## Quality vs speed (`--quality`)
 
-COLMAP already uses the GPU for the parts that can: **feature extraction + matching**
-run on CUDA, and that works **headless** (no display) on a CUDA build — check yours
-with `conda list colmap` (build string contains `cuda`) and
-`colmap feature_extractor --help | grep use_gpu` (defaults to `=1`). These were never
-the bottleneck.
+Default is **`--quality high`** — best reconstruction:
+- **CPU DSP-SIFT** extraction (`estimate_affine_shape` + `domain_size_pooling`): more
+  discriminative features than plain SIFT, "best results" per COLMAP. These are
+  **CPU-only**, so high quality runs *extraction* on the CPU even on a GPU box — by
+  design, because GPU (plain) SIFT is lower quality.
+- **guided matching** (geometry-verified). Matching still runs on the **GPU** (same
+  quality, stays fast) — only extraction takes the CPU hit.
+- **30000** gsplat steps (vs 7000).
 
-The slow stage is the **incremental mapper** (pose solving / bundle adjustment), which
-is **CPU-bound** — GPU doesn't help it (BA only uses the GPU if Ceres is built with
-CUDA+cuDSS, which the stock binaries aren't). To cut wall-clock:
+`--quality fast` flips all three (GPU SIFT, plain matching, 7k steps) for quick previews.
 
-- **`--sfm global`** → COLMAP's `global_mapper` (GLOMAP), **1–2 orders of magnitude
-  faster** on many-frame captures. Needs **COLMAP 4.x** (3.13 logs a warning and falls
-  back to incremental) and decent focal priors. Get it in a fresh env:
-  `conda install -c conda-forge "colmap=4.*=*cuda*"`.
-- fewer frames (`--fps 8`), or `--matcher sequential` for ordered video (much cheaper
-  than exhaustive's O(N²)).
+What the GPU does / doesn't help:
+- ✅ feature **matching** — CUDA, headless on a CUDA build, no quality cost.
+- ⚠️ feature **extraction** — GPU SIFT is faster but lower quality; we use CPU DSP-SIFT
+  for `--quality high` (`--quality fast` uses GPU SIFT).
+- ❌ the **mapper** (bundle adjustment) — CPU-bound; GPU doesn't help (needs Ceres+cuDSS).
+
+If high-quality + all-frames is too slow, the levers are: `--quality fast`, `--fps 30`
+to thin frames, `--matcher sequential` (video), or `--sfm global` (COLMAP 4.x
+`global_mapper`, ~10-50x faster mapper but needs good focal priors).
 
 ## What "good" looks like
 

@@ -61,16 +61,16 @@ def _has_subcommand(colmap_bin: str, command: str) -> bool:
         return False
 
 
-def _gpu_opt(colmap_bin: str, command: str, candidates: list[str], value: str) -> list[str]:
-    """Return [flag, value] using whichever GPU-toggle name this build advertises.
-    The name changed across versions: newer COLMAP uses --FeatureExtraction /
-    --FeatureMatching.use_gpu, older uses --SiftExtraction / --SiftMatching.use_gpu.
-    Probing means a CUDA build actually gets the flag (and --no-gpu actually works)
-    instead of us silently passing an unknown option and falling back to a default."""
+def _pick_opt(colmap_bin: str, command: str, candidates: list[str], value: str) -> list[str]:
+    """Return [flag, value] using whichever option name this build advertises.
+    COLMAP renamed several options across versions (e.g. --SiftExtraction.* →
+    --FeatureExtraction.*), so we probe --help and use whichever exists. Means a
+    flag actually takes effect (and --no-gpu actually works) instead of us silently
+    passing an unknown option."""
     for opt in candidates:
         if _supports(colmap_bin, command, opt):
             return [opt, value]
-    log.info("COLMAP advertises none of %s; leaving GPU at its build default", candidates)
+    log.info("COLMAP advertises none of %s; leaving it at the build default", candidates)
     return []
 
 
@@ -80,8 +80,9 @@ def run_colmap(
     *,
     camera_model: str = "OPENCV",
     matcher: str = "exhaustive",  # "exhaustive" (robust) | "sequential" (fast, ordered video)
-    sfm: str = "incremental",     # "incremental" (robust) | "global" (GLOMAP, ~10-50x faster, COLMAP 4.x only)
-    sift_use_gpu: bool = True,    # GPU SIFT runs headless on a CUDA COLMAP build (no X/display needed)
+    sfm: str = "incremental",     # "incremental" (robust, best quality) | "global" (GLOMAP, faster, 4.x)
+    high_quality: bool = True,    # DSP-SIFT (CPU-only, beats GPU SIFT) + guided matching
+    sift_use_gpu: bool = True,    # GPU SIFT runs headless on a CUDA build; ignored for extraction if high_quality
     colmap_bin: str = "colmap",
 ) -> str:
     """
@@ -120,8 +121,20 @@ def run_colmap(
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", camera_model,
     ]
-    feat_cmd += _gpu_opt(colmap_bin, "feature_extractor",
-                         ["--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"], use_gpu)
+    # Highest quality = DSP-SIFT (affine shape + domain-size pooling). COLMAP runs
+    # these on CPU only (the covariant CPU extractor) and they beat plain GPU SIFT,
+    # so high_quality forces CPU extraction regardless of sift_use_gpu.
+    extract_gpu = "0" if high_quality else use_gpu
+    feat_cmd += _pick_opt(colmap_bin, "feature_extractor",
+                          ["--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"], extract_gpu)
+    if high_quality:
+        feat_cmd += _pick_opt(colmap_bin, "feature_extractor",
+                              ["--FeatureExtraction.estimate_affine_shape",
+                               "--SiftExtraction.estimate_affine_shape"], "1")
+        feat_cmd += _pick_opt(colmap_bin, "feature_extractor",
+                              ["--FeatureExtraction.domain_size_pooling",
+                               "--SiftExtraction.domain_size_pooling"], "1")
+        log.info("high quality: CPU DSP-SIFT (affine shape + domain-size pooling)")
     _run(feat_cmd)
 
     # 2. feature matching ----------------------------------------------------
@@ -130,8 +143,12 @@ def run_colmap(
         "sequential": "sequential_matcher",
     }[matcher]
     match_cmd = [colmap_bin, matcher_cmd, "--database_path", db]
-    match_cmd += _gpu_opt(colmap_bin, matcher_cmd,
-                          ["--FeatureMatching.use_gpu", "--SiftMatching.use_gpu"], use_gpu)
+    match_cmd += _pick_opt(colmap_bin, matcher_cmd,
+                           ["--FeatureMatching.use_gpu", "--SiftMatching.use_gpu"], use_gpu)
+    if high_quality:  # geometry-verified matches; GPU matching stays fast (no quality cost)
+        match_cmd += _pick_opt(colmap_bin, matcher_cmd,
+                               ["--FeatureMatching.guided_matching",
+                                "--SiftMatching.guided_matching"], "1")
     _run(match_cmd)
 
     # 3. sparse reconstruction (SfM) → distorted/sparse/0 --------------------

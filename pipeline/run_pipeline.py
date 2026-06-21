@@ -57,15 +57,16 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
         db.set_status(memory_id, "RECONSTRUCTING", progress=40)
         colmap_dir = run_colmap(
             frames_dir, os.path.join(work, "colmap"),
-            matcher="sequential",
-            # GPU SIFT runs headless on a CUDA COLMAP build (no display needed) —
-            # the Modal image must install the conda-forge cuda-* colmap build.
+            matcher="sequential", high_quality=True,
+            # high_quality forces CPU DSP-SIFT for extraction (slower, better). GPU
+            # still does matching headless on a CUDA build — the Modal image must
+            # install the conda-forge cuda-* colmap build.
             sift_use_gpu=True,
         )
 
         # ---- TRAIN → export → upload --------------------------------------
         db.set_status(memory_id, "TRAINING", progress=60)
-        model = train_gsplat(frames_dir, colmap_dir, os.path.join(work, "gsplat"))
+        model = train_gsplat(frames_dir, colmap_dir, os.path.join(work, "gsplat"), max_steps=30000)
         scene = export_splat(model, os.path.join(work, "scene.ply"))   # CONTRACT D: scene.ply
 
         key = f"memories/{memory_id}/scene.ply"

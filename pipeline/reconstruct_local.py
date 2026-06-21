@@ -41,7 +41,10 @@ def main() -> None:
     ap.add_argument("--out", default="./out", help="output directory")
     ap.add_argument("--fps", type=int, default=None,
                     help="frames/sec to sample from --video (default: ALL frames; set N to downsample)")
-    ap.add_argument("--max-steps", type=int, default=7000, help="gsplat training iterations")
+    ap.add_argument("--quality", choices=["high", "fast"], default="high",
+                    help="high = CPU DSP-SIFT + guided matching + 30k steps (best); fast = GPU SIFT + 7k")
+    ap.add_argument("--max-steps", type=int, default=None,
+                    help="gsplat training steps (default: 30000 for --quality high, 7000 for fast)")
     ap.add_argument("--matcher", choices=["exhaustive", "sequential"], default=None,
                     help="default: sequential for --video, exhaustive for --images")
     ap.add_argument("--sfm", choices=["incremental", "global"], default="incremental",
@@ -56,6 +59,10 @@ def main() -> None:
     log = logging.getLogger("reconstruct")
     out = os.path.abspath(args.out)
     os.makedirs(out, exist_ok=True)
+    high_quality = args.quality == "high"
+    max_steps = args.max_steps if args.max_steps is not None else (30000 if high_quality else 7000)
+    log.info("quality=%s → COLMAP %s SIFT, %d training steps",
+             args.quality, "CPU DSP-" if high_quality else "GPU", max_steps)
 
     # ---- resolve the input → a frames directory ----------------------------
     images_dir = args.images or args.frames
@@ -74,13 +81,13 @@ def main() -> None:
     # ---- COLMAP → gsplat → export -----------------------------------------
     log.info("[2/4] COLMAP (matcher=%s) …", matcher)
     colmap_dir = run_colmap(frames_dir, os.path.join(out, "colmap"),
-                            matcher=matcher, sfm=args.sfm,
+                            matcher=matcher, sfm=args.sfm, high_quality=high_quality,
                             sift_use_gpu=not args.no_gpu_colmap,
                             colmap_bin=os.path.expanduser(args.colmap_bin))
 
-    log.info("[3/4] gsplat training (%d steps) …", args.max_steps)
+    log.info("[3/4] gsplat training (%d steps) …", max_steps)
     ply = train_gsplat(frames_dir, colmap_dir, os.path.join(out, "gsplat"),
-                       max_steps=args.max_steps)
+                       max_steps=max_steps)
 
     log.info("[4/4] export …")
     final = export_splat(ply, os.path.join(out, "scene.ply"))
