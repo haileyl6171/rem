@@ -17,6 +17,8 @@ export interface MemoryEntry {
   };
   /** Local .splat previewed on this tile (set by the demo data). */
   splatUrl?: string;
+  /** Scene authored with the opposite vertical axis — flip it upright. */
+  flip?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -67,9 +69,14 @@ interface SplatPreviewProps {
   url: string;
   target: [number, number, number];
   visible: boolean;
+  flip?: boolean;
 }
 
-function SplatPreview({ url, target, visible }: SplatPreviewProps) {
+function SplatPreview({ url, target, visible, flip = false }: SplatPreviewProps) {
+  // Flipped scenes are laid the other way up so they read upright in the grid.
+  const innerRot: [number, number, number] = flip
+    ? [-PREVIEW_ROT[0], PREVIEW_ROT[1], PREVIEW_ROT[2]]
+    : PREVIEW_ROT;
   const outerRef = useRef<THREE.Group>(null);
   const spinRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Group>(null);
@@ -153,7 +160,7 @@ function SplatPreview({ url, target, visible }: SplatPreviewProps) {
   return (
     <group ref={outerRef}>
       <group ref={spinRef}>
-        <group ref={innerRef} rotation={PREVIEW_ROT} />
+        <group ref={innerRef} rotation={innerRot} />
       </group>
     </group>
   );
@@ -497,7 +504,13 @@ export default function GridScene({
       {/* Only the active scene is loaded/rendered — it's disposed when the tour
           moves on, so the huge real .ply files never pile up in memory. */}
       {activeUrl && (
-        <SplatPreview key={activeUrl} url={activeUrl} target={previewTarget} visible />
+        <SplatPreview
+          key={activeUrl}
+          url={activeUrl}
+          target={previewTarget}
+          visible
+          flip={!!activeMemory?.flip}
+        />
       )}
 
       <ParticleDust />

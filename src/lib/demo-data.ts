@@ -68,7 +68,25 @@ export const DEMO_MEMORIES: DemoMemory[] = [
     caption: "lights up, the room holding its breath",
     date: "Showtime",
     splatUrl: "/real_use/stage1_scene.ply",
+    flip: true, // authored upside-down relative to the others
     colorProfile: { base: "#C49BB0", accent: "#E0BCCF" },
+  },
+  // Memories 7 & 8 — placeholders reusing the scenes from memories 2 & 3.
+  {
+    id: "placeholder-7",
+    title: "A quiet afternoon",
+    caption: "the same little tree, a different light",
+    date: "Reference",
+    splatUrl: "/real_use/Ping_pong.ply",
+    colorProfile: { base: "#88B0A4", accent: "#B4D6CB" },
+  },
+  {
+    id: "placeholder-8",
+    title: "Still life",
+    caption: "nothing happening, everything calm",
+    date: "Reference",
+    splatUrl: "/real_use/Suhaan_Stage.ply",
+    colorProfile: { base: "#9FB3C4", accent: "#C2D2DE" },
   },
 ];
 

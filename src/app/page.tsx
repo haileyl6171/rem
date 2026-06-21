@@ -122,6 +122,7 @@ export default function Home() {
             accent={activeMemory.colorProfile.accent}
             related={related}
             savedCameraState={cameraStates[activeMemory.id]}
+            flip={activeMemory.flip}
             onSelectRelated={handleSelectRelated}
             onReturn={handleReturn}
           />

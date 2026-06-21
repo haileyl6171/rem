@@ -23,6 +23,8 @@ interface MemoryViewerProps {
   accent?: string;
   related?: RelatedMemory[];
   savedCameraState?: CameraState;
+  /** Scene authored with the opposite vertical axis — flip it upright. */
+  flip?: boolean;
   onSelectRelated?: (id: string) => void;
   onReturn: (cameraState?: CameraState) => void;
 }
@@ -72,6 +74,7 @@ export default function MemoryViewer({
   accent = DEFAULT_ACCENT,
   related = [],
   savedCameraState,
+  flip = false,
   onSelectRelated,
   onReturn,
 }: MemoryViewerProps) {
@@ -80,6 +83,7 @@ export default function MemoryViewer({
   // The saved pose to enter with — captured once at mount (the parent remounts
   // this component per memory via `key`).
   const savedRef = useRef(savedCameraState);
+  const flipRef = useRef(flip);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hudVisible, setHudVisible] = useState(true);
@@ -173,7 +177,8 @@ export default function MemoryViewer({
 
         const viewer = new GaussianSplats3D.Viewer({
           rootElement: containerRef.current,
-          cameraUp: [0, -1, 0],
+          // Flipped scenes use the opposite up-axis so they render upright.
+          cameraUp: flipRef.current ? [0, 1, 0] : [0, -1, 0],
           initialCameraPosition: savedRef.current?.position ?? [1, -1, 6],
           initialCameraLookAt: savedRef.current?.lookAt ?? [0, 0, 0],
           gpuAcceleratedSort: false,
