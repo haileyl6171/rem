@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import IngestScreen, { type MemoryEntry } from "@/components/ingest-screen";
 import LoadingScreen from "@/components/loading-screen";
-import MemoryViewer from "@/components/memory-viewer";
+import MemoryViewer, { type CameraState } from "@/components/memory-viewer";
 
 type ViewState = "input" | "loading" | "viewer";
 
@@ -14,18 +14,16 @@ interface MemoryData {
 }
 
 const DEMO_MEMORIES: MemoryEntry[] = [
-  { id: "1", title: "Golden hour on the porch", splatUrl: "/bonsai.splat", colorProfile: { base: "#1A1A1A", accent: "#3A3A3A" } },
-  { id: "2", title: "Morning fog in the valley", splatUrl: "/bonsai.splat", colorProfile: { base: "#0F0F0F", accent: "#2E2E2E" } },
-  { id: "3", title: "Rain on the cobblestones", splatUrl: "/bonsai.splat", colorProfile: { base: "#222222", accent: "#444444" } },
-  { id: "4", title: "Autumn leaves at the creek", splatUrl: "/bonsai.splat", colorProfile: { base: "#181818", accent: "#383838" } },
-  { id: "5", title: "Dusty road at sunset", splatUrl: "/bonsai.splat", colorProfile: { base: "#111111", accent: "#333333" } },
-  { id: "6", title: "Old bookshop on Market St", splatUrl: "/bonsai.splat", colorProfile: { base: "#1E1E1E", accent: "#404040" } },
-  { id: "7", title: "Wind through the wheat field", splatUrl: "/bonsai.splat", colorProfile: { base: "#151515", accent: "#353535" } },
-  { id: "8", title: "First snow on the rooftop", splatUrl: "/bonsai.splat", colorProfile: { base: "#0D0D0D", accent: "#2A2A2A" } },
+  { id: "1", title: "Ping Pong", splatUrl: "/Ping_pong.ply", colorProfile: { base: "#1A1A1A", accent: "#3A3A3A" } },
+  { id: "2", title: "Redbull Scene", splatUrl: "/Redbull_Scene.ply", colorProfile: { base: "#0F0F0F", accent: "#2E2E2E" } },
+  { id: "3", title: "Suhaan Stage", splatUrl: "/Suhaan_Stage.ply", colorProfile: { base: "#222222", accent: "#444444" } },
+  { id: "4", title: "Craft Room", splatUrl: "/craft_room.ply", colorProfile: { base: "#181818", accent: "#383838" } },
 ];
 
 export default function Home() {
   const [view, setView] = useState<ViewState>("input");
+  const [viewerSrc, setViewerSrc] = useState<string | undefined>();
+  const cameraStates = useRef<Map<string, CameraState>>(new Map());
   const [memoryData, setMemoryData] = useState<MemoryData>({
     description: "",
     imageFiles: [],
@@ -56,7 +54,9 @@ export default function Home() {
     []
   );
 
-  const handleMemoryClick = useCallback(() => {
+  const handleMemoryClick = useCallback((id: string) => {
+    const mem = DEMO_MEMORIES.find(m => m.id === id);
+    setViewerSrc(mem?.splatUrl);
     setView("viewer");
   }, []);
 
@@ -64,10 +64,13 @@ export default function Home() {
     setView("viewer");
   }, []);
 
-  const handleReturn = useCallback(() => {
+  const handleReturn = useCallback((cameraState?: CameraState) => {
+    if (viewerSrc && cameraState) {
+      cameraStates.current.set(viewerSrc, cameraState);
+    }
     setMemoryData({ description: "", imageFiles: [], videoFile: null });
     setView("input");
-  }, []);
+  }, [viewerSrc]);
 
   return (
     <main className="h-full w-full">
@@ -84,7 +87,13 @@ export default function Home() {
           onComplete={handleLoadingComplete}
         />
       )}
-      {view === "viewer" && <MemoryViewer onReturn={handleReturn} />}
+      {view === "viewer" && (
+        <MemoryViewer
+          src={viewerSrc}
+          savedCameraState={viewerSrc ? cameraStates.current.get(viewerSrc) : undefined}
+          onReturn={handleReturn}
+        />
+      )}
     </main>
   );
 }

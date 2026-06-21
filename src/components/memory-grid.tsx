@@ -708,7 +708,7 @@ interface GridSceneProps {
 
 export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const [previewMounted, setPreviewMounted] = useState(false);
+  const [mountedUrls, setMountedUrls] = useState<Set<string>>(new Set());
   const [hoverTarget, setHoverTarget] = useState<{
     position: [number, number, number];
     splatUrl: string;
@@ -716,37 +716,36 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
 
   const handleTileHoverStart = useCallback(
     (position: [number, number, number], splatUrl: string) => {
-      if (!previewMounted) setPreviewMounted(true);
+      setMountedUrls(prev => {
+        if (prev.has(splatUrl)) return prev;
+        return new Set([...prev, splatUrl]);
+      });
       setHoverTarget({ position, splatUrl });
     },
-    [previewMounted],
+    [],
   );
 
   const handleTileHoverEnd = useCallback(() => {
     setHoverTarget(null);
   }, []);
 
+  const cols = 3;
+  const rows = Math.ceil((memories.length + 1) / cols);
+
   const slots = useMemo(() => {
-    const result: Array<{ row: number; col: number; memory: MemoryEntry | null }> = [];
-    let memIdx = 0;
-    for (let row = 0; row < 3; row++) {
-      for (let col = 0; col < 3; col++) {
-        if (row === 2 && col === 2) continue;
-        if (memIdx < memories.length) {
-          result.push({ row, col, memory: memories[memIdx] });
-          memIdx++;
-        } else {
-          result.push({ row, col, memory: null });
-        }
-      }
+    const result: Array<{ row: number; col: number; memory: MemoryEntry }> = [];
+    for (let i = 0; i < memories.length; i++) {
+      result.push({
+        row: Math.floor(i / cols),
+        col: i % cols,
+        memory: memories[i],
+      });
     }
     return result;
   }, [memories]);
 
-  const previewSplatUrl = useMemo(
-    () => memories.find((m) => m.splatUrl)?.splatUrl ?? null,
-    [memories],
-  );
+  const addTileRow = Math.floor(memories.length / cols);
+  const addTileCol = memories.length % cols;
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -760,29 +759,25 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
     >
       {slots.map(({ row, col, memory }, i) => {
         const x = (col - 1) * TILE_GAP;
-        const y = (1 - row) * TILE_GAP;
-        const z = TILE_ELEVATIONS[i];
-        const palette = memory
-          ? memory.colorProfile
-          : PLACEHOLDER_PALETTES[i % PLACEHOLDER_PALETTES.length];
-        const isFilled = !!memory;
+        const y = ((rows - 1) / 2 - row) * TILE_GAP;
+        const z = TILE_ELEVATIONS[i] || 0;
 
         return (
           <MemoryTile
-            key={`${row}-${col}`}
+            key={memory.id}
             position={[x, y, z]}
-            baseColor={palette.base}
-            accentColor={palette.accent}
-            depth={isFilled ? TILE_DEPTH : TILE_DEPTH_EMPTY}
-            archetype={TILE_ARCHETYPES[i]}
-            title={memory?.title}
+            baseColor={memory.colorProfile.base}
+            accentColor={memory.colorProfile.accent}
+            depth={TILE_DEPTH}
+            archetype={TILE_ARCHETYPES[i] || "stepped"}
+            title={memory.title}
             onHoverStart={
-              memory?.splatUrl
+              memory.splatUrl
                 ? (pos) => handleTileHoverStart(pos, memory.splatUrl!)
                 : undefined
             }
-            onHoverEnd={memory?.splatUrl ? handleTileHoverEnd : undefined}
-            onClick={memory ? () => onMemoryClick?.(memory.id) : undefined}
+            onHoverEnd={memory.splatUrl ? handleTileHoverEnd : undefined}
+            onClick={() => onMemoryClick?.(memory.id)}
           />
         );
       })}
@@ -811,11 +806,12 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
         </mesh>
       )}
 
-      {previewMounted && previewSplatUrl && (
+      {[...mountedUrls].map(url => (
         <SplatPreview
-          url={previewSplatUrl}
+          key={url}
+          url={url}
           targetPosition={
-            hoverTarget
+            hoverTarget?.splatUrl === url
               ? [
                   hoverTarget.position[0],
                   hoverTarget.position[1],
@@ -823,12 +819,16 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
                 ]
               : [0, 0, -1]
           }
-          visible={!!hoverTarget}
+          visible={hoverTarget?.splatUrl === url}
         />
-      )}
+      ))}
 
       <AddTile
-        position={[(2 - 1) * TILE_GAP, (1 - 2) * TILE_GAP, TILE_ELEVATIONS[8]]}
+        position={[
+          (addTileCol - 1) * TILE_GAP,
+          ((rows - 1) / 2 - addTileRow) * TILE_GAP,
+          TILE_ELEVATIONS[memories.length] || 0,
+        ]}
         onClick={onNewMemoryClick}
       />
 

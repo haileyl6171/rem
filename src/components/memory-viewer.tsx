@@ -1,10 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+
+export interface CameraState {
+  position: [number, number, number];
+  lookAt: [number, number, number];
+}
 
 interface MemoryViewerProps {
   src?: string;
-  onReturn: () => void;
+  savedCameraState?: CameraState;
+  onReturn: (cameraState?: CameraState) => void;
 }
 
 const CONTROLS_MAP = [
@@ -14,12 +20,30 @@ const CONTROLS_MAP = [
   { key: "Scroll", action: "Zoom" },
 ] as const;
 
-export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
+export default function MemoryViewer({ src, savedCameraState, onReturn }: MemoryViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewerRef = useRef<{ dispose: () => void } | null>(null);
+  const viewerRef = useRef<any>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
   const [hudVisible, setHudVisible] = useState(true);
+
+  const getCameraState = useCallback((): CameraState | undefined => {
+    const v = viewerRef.current;
+    if (!v) return undefined;
+    const camera = v.camera;
+    if (!camera) return undefined;
+    const controls = v.perspectiveControls || v.orthographicControls;
+    return {
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      lookAt: controls?.target
+        ? [controls.target.x, controls.target.y, controls.target.z]
+        : [0, 0, 0],
+    };
+  }, []);
+
+  const handleReturn = useCallback(() => {
+    onReturn(getCameraState());
+  }, [onReturn, getCameraState]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !containerRef.current) return;
@@ -39,8 +63,8 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
         const viewer = new GaussianSplats3D.Viewer({
           rootElement: containerRef.current,
           cameraUp: [0, -1, 0],
-          initialCameraPosition: [1, -1, 6],
-          initialCameraLookAt: [0, 0, 0],
+          initialCameraPosition: savedCameraState?.position ?? [1, -1, 6],
+          initialCameraLookAt: savedCameraState?.lookAt ?? [0, 0, 0],
           gpuAcceleratedSort: false,
           sharedMemoryForWorkers: false,
         });
@@ -116,7 +140,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
             exists in <code className="text-[#CCCCCC]">/public</code>
           </p>
           <button
-            onClick={onReturn}
+            onClick={handleReturn}
             className="mt-4 font-[family-name:var(--font-space-mono)] text-[10px] tracking-[0.3em] uppercase text-[#888888] hover:text-white transition-colors border-b border-[#333333] pb-1"
           >
             Return
@@ -132,7 +156,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
           ].join(" ")}
         >
           <button
-            onClick={onReturn}
+            onClick={handleReturn}
             className="pointer-events-auto flex items-center gap-3 rounded-xl bg-[#111111] border border-[#2A2A2A] px-5 py-3 font-[family-name:var(--font-space-mono)] text-[10px] tracking-[0.2em] uppercase text-[#888888] hover:text-white transition-all"
           >
             <span className="text-lg leading-none">←</span>
