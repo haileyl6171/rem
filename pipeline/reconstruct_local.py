@@ -39,7 +39,8 @@ def main() -> None:
     src.add_argument("--images", help="a folder of input images → used directly")
     src.add_argument("--frames", help="alias for --images (a folder of frames)")
     ap.add_argument("--out", default="./out", help="output directory")
-    ap.add_argument("--fps", type=int, default=12, help="frames/sec to sample from --video")
+    ap.add_argument("--fps", type=int, default=None,
+                    help="frames/sec to sample from --video (default: ALL frames; set N to downsample)")
     ap.add_argument("--max-steps", type=int, default=7000, help="gsplat training iterations")
     ap.add_argument("--matcher", choices=["exhaustive", "sequential"], default=None,
                     help="default: sequential for --video, exhaustive for --images")
@@ -56,7 +57,8 @@ def main() -> None:
     # ---- resolve the input → a frames directory ----------------------------
     images_dir = args.images or args.frames
     if args.video:
-        log.info("[1/4] extracting frames from video (%d fps) …", args.fps)
+        log.info("[1/4] extracting frames from video (%s) …",
+                 f"{args.fps} fps" if args.fps else "all frames")
         frames_dir = extract_frames(args.video, os.path.join(out, "frames"), fps=args.fps)
         matcher = args.matcher or "sequential"   # ordered video → neighbour matching
     else:

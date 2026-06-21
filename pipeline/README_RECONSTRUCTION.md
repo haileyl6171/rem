@@ -43,8 +43,8 @@ python pipeline/reconstruct_local.py --video my_clip.mp4 --out ./out
 # from a folder of photos (used directly):
 python pipeline/reconstruct_local.py --images ./my_photos --out ./out
 
-# options: --fps 12 (video sampling), --max-steps 7000, --matcher sequential|exhaustive,
-#          --no-gpu-colmap (CPU SIFT; our conda COLMAP has no GPU SIFT anyway)
+# options: --fps N (downsample; default = ALL frames), --max-steps 7000,
+#          --matcher sequential|exhaustive, --sfm incremental|global, --no-gpu-colmap
 ```
 **Output (the one artifact):** `./out/scene.ply` — view it in
 [superspl.at/editor](https://superspl.at/editor) or your `memory-viewer`.
@@ -88,7 +88,8 @@ CUDA+cuDSS, which the stock binaries aren't). To cut wall-clock:
 | Splat is **spikes/clouds**, COLMAP only registered **2–3** images | Frames don't overlap/match — usually the **capture**. Need a slow capture with **translation** (see below). More fps does **not** fix this. |
 | `CHOLMOD: Matrix not positive definite` flooding the log | Bundle adjustment is **ill-conditioned = degenerate geometry** → the camera **rotated in place** (no parallax). No code/matcher fixes pure rotation — re-shoot with translation. |
 | COLMAP made several `sparse/0,1,2…` and the splat was tiny | The **fragment bug** — `sparse/0` isn't always the biggest. Already fixed: `colmap.py` auto-picks the largest model. |
-| Run takes 30–45 min | Too many near-duplicate frames (high fps). Use `--fps 12`, not every frame. |
+| Run takes too long | All frames is the default (best overlap). For speed, trade some quality: `--fps 12` to downsample, `--matcher sequential` (video), or `--sfm global` (COLMAP 4.x). |
+| Gaps / many unregistered images at low fps | Frames didn't overlap enough — that's why all-frames is now the default. Don't downsample. |
 | Viewing junk even after a good run | You're viewing a **stale** file. Use `out/scene.ply` / `out/gsplat/ply/point_cloud_*.ply`, not old leftovers. |
 | `gsplat.color_correct` ImportError | Library↔examples version mismatch. The submodule is pinned to **v1.5.3** to match the prebuilt wheel — run `git submodule update --init`. |
 

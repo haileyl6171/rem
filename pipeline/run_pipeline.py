@@ -42,7 +42,7 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
         images = [p for p in local if p.lower().endswith(_IMG_EXT)]
 
         if videos:                                   # VIDEO input
-            extract_frames(videos[0], frames_dir, fps=12)
+            extract_frames(videos[0], frames_dir)    # all frames (max overlap for COLMAP)
         elif len(images) >= 8:                       # IMAGE-SET input (enough to reconstruct)
             os.makedirs(frames_dir, exist_ok=True)
             for p in images:
@@ -51,7 +51,7 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
         else:                                        # TEXT / too-few images → GENERATE
             prompt = make_prompt(description)
             video = generate_video(prompt, images, out_path=os.path.join(work, "generated.mp4"))
-            extract_frames(video, frames_dir, fps=12)
+            extract_frames(video, frames_dir)
 
         # ---- RECONSTRUCT (COLMAP is headless on Modal → CPU SIFT) ----------
         db.set_status(memory_id, "RECONSTRUCTING", progress=40)
