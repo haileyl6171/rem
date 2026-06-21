@@ -14,14 +14,14 @@ interface MemoryData {
 }
 
 const DEMO_MEMORIES: MemoryEntry[] = [
-  { id: "1", title: "Golden hour on the porch", colorProfile: { base: "#8B4513", accent: "#A65E2E" } },
-  { id: "2", title: "Morning fog in the valley", colorProfile: { base: "#C87533", accent: "#E09050" } },
-  { id: "3", title: "Rain on the cobblestones", colorProfile: { base: "#A0522D", accent: "#BF6F45" } },
-  { id: "4", title: "Autumn leaves at the creek", colorProfile: { base: "#D4883A", accent: "#E8A060" } },
-  { id: "5", title: "Dusty road at sunset", colorProfile: { base: "#6B3A2A", accent: "#8B5540" } },
-  { id: "6", title: "Old bookshop on Market St", colorProfile: { base: "#CC6B3C", accent: "#E08858" } },
-  { id: "7", title: "Wind through the wheat field", colorProfile: { base: "#8E6540", accent: "#B08560" } },
-  { id: "8", title: "First snow on the rooftop", colorProfile: { base: "#5C3D2E", accent: "#7A5845" } },
+  { id: "1", title: "Golden hour on the porch", splatUrl: "/bonsai.splat", colorProfile: { base: "#1A1A1A", accent: "#3A3A3A" } },
+  { id: "2", title: "Morning fog in the valley", splatUrl: "/bonsai.splat", colorProfile: { base: "#0F0F0F", accent: "#2E2E2E" } },
+  { id: "3", title: "Rain on the cobblestones", splatUrl: "/bonsai.splat", colorProfile: { base: "#222222", accent: "#444444" } },
+  { id: "4", title: "Autumn leaves at the creek", splatUrl: "/bonsai.splat", colorProfile: { base: "#181818", accent: "#383838" } },
+  { id: "5", title: "Dusty road at sunset", splatUrl: "/bonsai.splat", colorProfile: { base: "#111111", accent: "#333333" } },
+  { id: "6", title: "Old bookshop on Market St", splatUrl: "/bonsai.splat", colorProfile: { base: "#1E1E1E", accent: "#404040" } },
+  { id: "7", title: "Wind through the wheat field", splatUrl: "/bonsai.splat", colorProfile: { base: "#151515", accent: "#353535" } },
+  { id: "8", title: "First snow on the rooftop", splatUrl: "/bonsai.splat", colorProfile: { base: "#0D0D0D", accent: "#2A2A2A" } },
 ];
 
 export default function Home() {

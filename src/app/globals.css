@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-geist);
-  --font-serif: var(--font-playfair);
+  --font-sans: var(--font-space-grotesk);
+  --font-mono: var(--font-space-mono);
 }
 
 :root {
-  --font-geist: "Geist", sans-serif;
-  --font-playfair: "Playfair Display", serif;
+  --font-space-grotesk: "Space Grotesk", sans-serif;
+  --font-space-mono: "Space Mono", monospace;
 }
 
 html,
@@ -16,10 +16,9 @@ body {
   overflow: hidden;
 }
 
-/* Thin custom scrollbar for textarea */
 textarea {
   scrollbar-width: thin;
-  scrollbar-color: #C86B3C transparent;
+  scrollbar-color: #555555 transparent;
 }
 textarea::-webkit-scrollbar {
   width: 4px;
@@ -28,6 +27,6 @@ textarea::-webkit-scrollbar-track {
   background: transparent;
 }
 textarea::-webkit-scrollbar-thumb {
-  background-color: #C86B3C;
-  border-radius: 0px;
+  background-color: #555555;
+  border-radius: 4px;
 }

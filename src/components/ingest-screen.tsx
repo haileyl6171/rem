@@ -42,18 +42,18 @@ export default function IngestScreen({
   );
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-[#F5F2ED]">
+    <div className="relative h-full w-full overflow-hidden bg-[#0A0A0A]">
       <Canvas
         shadows
         camera={{ position: [0, 0, 4.2], fov: 42 }}
-        gl={{ antialias: true, alpha: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+        gl={{ antialias: true, alpha: true, stencil: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
         style={{ position: "absolute", inset: 0 }}
       >
-        <ambientLight intensity={0.4} />
+        <ambientLight intensity={0.3} />
 
         <directionalLight
           position={[3, 5, 6]}
-          intensity={1.8}
+          intensity={1.5}
           castShadow
           shadow-mapSize-width={2048}
           shadow-mapSize-height={2048}
@@ -65,11 +65,11 @@ export default function IngestScreen({
           shadow-camera-bottom={-3}
           shadow-bias={-0.001}
           shadow-normalBias={0.02}
-          color="#FFF5E8"
+          color="#FFFFFF"
         />
 
-        <directionalLight position={[-3, -2, 4]} intensity={0.3} color="#E8D5C0" />
-        <directionalLight position={[0, -4, -2]} intensity={0.15} color="#C0D0E0" />
+        <directionalLight position={[-3, -2, 4]} intensity={0.2} color="#FFFFFF" />
+        <directionalLight position={[0, -4, -2]} intensity={0.1} color="#FFFFFF" />
 
         <Suspense fallback={null}>
           <GridScene
@@ -85,10 +85,12 @@ export default function IngestScreen({
           rotateSpeed={0.8}
           zoomSpeed={0.9}
           panSpeed={0.8}
-          minDistance={2}
-          maxDistance={8}
-          minPolarAngle={0.2}
-          maxPolarAngle={Math.PI * 0.75}
+          minDistance={3}
+          maxDistance={6}
+          minPolarAngle={0.4}
+          maxPolarAngle={Math.PI * 0.55}
+          minAzimuthAngle={-Math.PI / 4}
+          maxAzimuthAngle={Math.PI / 4}
         />
 
         <EffectComposer>
@@ -96,12 +98,14 @@ export default function IngestScreen({
         </EffectComposer>
       </Canvas>
 
-      <div className="pointer-events-none absolute inset-0 flex flex-col justify-end p-8">
-        <div className="flex items-end justify-between">
-          <p className="text-[8px] tracking-[0.3em] text-[#6A6258] uppercase">
+      <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-8">
+        <div className="flex justify-center pt-8">
+          <h1 className="font-[family-name:var(--font-space-grotesk)] text-5xl font-light tracking-widest text-[#666666]">rem</h1>
+        </div>
+        <div className="flex items-end justify-center">
+          <p className="font-[family-name:var(--font-space-mono)] text-[8px] tracking-[0.3em] text-[#444444] uppercase">
             Powered by 3D Gaussian Splatting
           </p>
-          <h1 className="font-serif text-2xl text-[#6A5D4F]">rem</h1>
         </div>
       </div>
 

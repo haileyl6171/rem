@@ -1,15 +1,16 @@
 import type { Metadata } from "next";
-import { Geist, Playfair_Display } from "next/font/google";
+import { Space_Grotesk, Space_Mono } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({
-  variable: "--font-geist",
+const spaceGrotesk = Space_Grotesk({
+  variable: "--font-space-grotesk",
   subsets: ["latin"],
 });
 
-const playfair = Playfair_Display({
-  variable: "--font-playfair",
+const spaceMono = Space_Mono({
+  variable: "--font-space-mono",
   subsets: ["latin"],
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
@@ -23,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geist.variable} ${playfair.variable} h-full`}>
-      <body suppressHydrationWarning className="h-full bg-[#F7F5F0] text-[#4A3320] antialiased">
+    <html lang="en" className={`${spaceGrotesk.variable} ${spaceMono.variable} h-full`}>
+      <body suppressHydrationWarning className="h-full bg-[#0A0A0A] text-[#E0E0E0] antialiased">
         {children}
       </body>
     </html>

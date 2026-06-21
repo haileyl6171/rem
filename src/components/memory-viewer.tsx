@@ -22,21 +22,18 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
   const [hudVisible, setHudVisible] = useState(true);
 
   useEffect(() => {
-    // Guard: only run in browser
     if (typeof window === "undefined" || !containerRef.current) return;
 
     let disposed = false;
 
     const initViewer = async () => {
       try {
-        // Dynamic import keeps the heavy WebGL library out of the SSR bundle
         const GaussianSplats3D = await import(
           "@mkkellogg/gaussian-splats-3d"
         );
 
         if (disposed || !containerRef.current) return;
 
-        // Clear any leftover canvas from React Strict Mode double-mount
         containerRef.current.innerHTML = "";
 
         const viewer = new GaussianSplats3D.Viewer({
@@ -85,9 +82,7 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
       if (viewerRef.current) {
         try {
           viewerRef.current.dispose();
-        } catch {
-          // Silence errors during teardown
-        }
+        } catch {}
         viewerRef.current = null;
       }
       if (containerRef.current) {
@@ -97,42 +92,38 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
   }, [src]);
 
   return (
-    <div className="relative h-full w-full bg-[#1A1817] overflow-hidden font-sans">
-      {/* Three.js / WebGL canvas mount target */}
+    <div className="relative h-full w-full bg-[#0A0A0A] overflow-hidden font-[family-name:var(--font-space-grotesk)]">
       <div ref={containerRef} className="absolute inset-0" />
 
-      {/* Loading indicator (pre-scene) */}
       {!isLoaded && !loadError && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-[#F7F5F0]">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none bg-[#0A0A0A]">
           <div className="flex flex-col items-center gap-6">
-            <div className="w-8 h-8 rounded-full border-[1px] border-[#E2DCD0] border-t-[#C86B3C] animate-spin" />
-            <span className="text-[10px] text-[#7A6B63] tracking-[0.3em] uppercase">
+            <div className="w-8 h-8 rounded-full border-[1px] border-[#222222] border-t-white animate-spin" />
+            <span className="font-[family-name:var(--font-space-mono)] text-[10px] text-[#666666] tracking-[0.3em] uppercase">
               Loading Splat...
             </span>
           </div>
         </div>
       )}
 
-      {/* Error state */}
       {loadError && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 bg-[#F7F5F0]">
-          <p className="text-sm font-serif text-[#C86B3C] text-center max-w-sm">
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-8 bg-[#0A0A0A]">
+          <p className="text-sm text-[#888888] text-center max-w-sm">
             {loadError}
           </p>
-          <p className="text-[10px] text-[#7A6B63] tracking-[0.2em] uppercase">
-            ensure <code className="text-[#4A3320]">sample_memory.splat</code>{" "}
-            exists in <code className="text-[#4A3320]">/public</code>
+          <p className="font-[family-name:var(--font-space-mono)] text-[10px] text-[#666666] tracking-[0.2em] uppercase">
+            ensure <code className="text-[#CCCCCC]">sample_memory.splat</code>{" "}
+            exists in <code className="text-[#CCCCCC]">/public</code>
           </p>
           <button
             onClick={onReturn}
-            className="mt-4 text-[10px] tracking-[0.3em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-colors border-b border-[#E2DCD0] pb-1"
+            className="mt-4 font-[family-name:var(--font-space-mono)] text-[10px] tracking-[0.3em] uppercase text-[#888888] hover:text-white transition-colors border-b border-[#333333] pb-1"
           >
             Return
           </button>
         </div>
       )}
 
-      {/* HUD overlay */}
       {!loadError && (
         <div
           className={[
@@ -140,26 +131,24 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
             hudVisible ? "opacity-100" : "opacity-0",
           ].join(" ")}
         >
-          {/* Return button */}
           <button
             onClick={onReturn}
-            className="pointer-events-auto flex items-center gap-3 bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[10px] tracking-[0.2em] uppercase text-[#4A3320] hover:text-[#C86B3C] transition-all shadow-sm"
+            className="pointer-events-auto flex items-center gap-3 rounded-xl bg-[#111111] border border-[#2A2A2A] px-5 py-3 font-[family-name:var(--font-space-mono)] text-[10px] tracking-[0.2em] uppercase text-[#888888] hover:text-white transition-all"
           >
-            <span className="text-lg leading-none font-serif">←</span>
+            <span className="text-lg leading-none">←</span>
             Return
           </button>
 
-          {/* Controls legend */}
-          <div className="pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-6 py-5 flex flex-col gap-3 shadow-sm min-w-[200px]">
-            <p className="text-[9px] tracking-[0.3em] text-[#B5AD9F] uppercase mb-2 border-b border-[#E2DCD0] pb-2">
+          <div className="pointer-events-auto rounded-xl bg-[#111111] border border-[#2A2A2A] px-6 py-5 flex flex-col gap-3 min-w-[200px]">
+            <p className="font-[family-name:var(--font-space-mono)] text-[9px] tracking-[0.3em] text-[#555555] uppercase mb-2 border-b border-[#222222] pb-2">
               Controls
             </p>
             {CONTROLS_MAP.map(({ key, action }) => (
               <div key={key} className="flex items-center justify-between gap-6">
-                <span className="text-[10px] text-[#7A6B63] uppercase tracking-wider">
+                <span className="font-[family-name:var(--font-space-mono)] text-[10px] text-[#666666] uppercase tracking-wider">
                   {action}
                 </span>
-                <kbd className="text-[10px] text-[#4A3320] font-medium tracking-widest">
+                <kbd className="font-[family-name:var(--font-space-mono)] text-[10px] text-[#CCCCCC] font-medium tracking-widest">
                   {key}
                 </kbd>
               </div>
@@ -168,19 +157,17 @@ export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
         </div>
       )}
 
-      {/* HUD toggle button */}
       {!loadError && (
         <button
           onClick={() => setHudVisible((v) => !v)}
-          className="absolute bottom-8 right-8 pointer-events-auto bg-[#F7F5F0] border border-[#E2DCD0] px-5 py-3 text-[9px] tracking-[0.2em] uppercase text-[#7A6B63] hover:text-[#C86B3C] transition-all shadow-sm"
+          className="absolute bottom-8 right-8 pointer-events-auto rounded-xl bg-[#111111] border border-[#2A2A2A] px-5 py-3 font-[family-name:var(--font-space-mono)] text-[9px] tracking-[0.2em] uppercase text-[#666666] hover:text-white transition-all"
         >
           {hudVisible ? "Hide HUD" : "Show HUD"}
         </button>
       )}
 
-      {/* Subtle branding */}
       <div className="absolute bottom-8 left-8 pointer-events-none">
-        <span className="text-2xl font-serif text-[#F7F5F0]/50">
+        <span className="text-2xl font-light tracking-widest text-white/30">
           rem
         </span>
       </div>

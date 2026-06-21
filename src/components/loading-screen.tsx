@@ -47,7 +47,6 @@ export default function LoadingScreen({
     return () => clearInterval(intervalId);
   }, []);
 
-  // Fine-grained smooth progress within each phase
   useEffect(() => {
     const startAt = (phaseIndex / PHASES.length) * 100;
     const endAt = ((phaseIndex + 1) / PHASES.length) * 100;
@@ -67,62 +66,57 @@ export default function LoadingScreen({
   const displayProgress = Math.min(Math.round(progress), 100);
 
   return (
-    <div className="h-full w-full flex flex-col items-center justify-center px-6 select-none font-sans bg-[#F7F5F0]">
-      {/* Logo */}
-      <h1 className="text-5xl font-serif text-[#4A3320] mb-20">
+    <div className="h-full w-full flex flex-col items-center justify-center px-6 select-none font-[family-name:var(--font-space-grotesk)] bg-[#0A0A0A]">
+      <h1 className="text-5xl font-light tracking-widest text-[#E0E0E0] mb-20">
         Rem
       </h1>
 
       <div className="w-full max-w-md flex flex-col gap-12">
-        {/* Current phase label */}
         <div className="min-h-10 flex items-center justify-center text-center">
           <p
             key={safeIndex}
-            className="text-[11px] tracking-[0.2em] text-[#7A6B63] uppercase animate-fade-in"
+            className="font-[family-name:var(--font-space-mono)] text-[11px] tracking-[0.2em] text-[#666666] uppercase animate-fade-in"
           >
             {PHASES[safeIndex]}
           </p>
         </div>
 
-        {/* Progress bar */}
         <div className="flex flex-col gap-4">
-          <div className="h-[1px] w-full bg-[#E2DCD0] overflow-hidden">
+          <div className="h-[1px] w-full bg-[#222222] overflow-hidden rounded-full">
             <div
-              className="h-full bg-[#C86B3C] transition-all duration-300 ease-linear"
+              className="h-full bg-white transition-all duration-300 ease-linear"
               style={{ width: `${displayProgress}%` }}
             />
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-[9px] tracking-[0.3em] text-[#B5AD9F] uppercase">
+            <span className="font-[family-name:var(--font-space-mono)] text-[9px] tracking-[0.3em] text-[#444444] uppercase">
               Processing
             </span>
-            <span className="text-[10px] tabular-nums text-[#7A6B63] tracking-widest">
+            <span className="font-[family-name:var(--font-space-mono)] text-[10px] tabular-nums text-[#666666] tracking-widest">
               {displayProgress}%
             </span>
           </div>
         </div>
 
-        {/* Animated step indicators */}
         <div className="flex gap-2">
           {PHASES.map((_, i) => (
             <div
               key={i}
               className={[
-                "h-[1px] flex-1 transition-all duration-700",
+                "h-[1px] flex-1 rounded-full transition-all duration-700",
                 i < phaseIndex
-                  ? "bg-[#C86B3C]"
+                  ? "bg-white"
                   : i === phaseIndex
-                  ? "bg-[#4A3320]"
-                  : "bg-[#E2DCD0]",
+                  ? "bg-[#888888]"
+                  : "bg-[#222222]",
               ].join(" ")}
             />
           ))}
         </div>
 
-        {/* Optional description echo */}
         {description && (
           <div className="mt-4 text-center">
-            <p className="text-sm font-serif text-[#7A6B63] italic leading-relaxed line-clamp-2">
+            <p className="text-sm text-[#666666] italic leading-relaxed line-clamp-2">
               &quot;{description}&quot;
             </p>
           </div>
