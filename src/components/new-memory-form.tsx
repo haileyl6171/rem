@@ -192,20 +192,35 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
           <p className="-mt-4 mb-4 text-[10px] text-[#8FB6CE]">{voiceError}</p>
         )}
 
-        {/* Mode toggle */}
-        <div className="mb-4 flex">
+        {/* Media mode selector */}
+        <label className="mb-2 block text-[10px] tracking-[0.2em] text-white/45 uppercase">
+          Upload media
+        </label>
+        <div className="mb-4 flex gap-1 rounded-xl bg-white/5 p-1">
           {(["photos", "video"] as const).map((mode) => (
             <button
               key={mode}
               type="button"
               onClick={() => handleSwitchMode(mode)}
               className={[
-                "flex-1 py-2 text-[10px] uppercase tracking-[0.2em] transition-all",
+                "flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-[10px] uppercase tracking-[0.2em] transition-all",
                 mediaMode === mode
-                  ? "border-b-2 border-[#C86B3C] text-[#D8C8A8]"
-                  : "border-b border-[#4A4035] text-[#6A5E50] hover:text-[#9A8B7A]",
+                  ? "bg-[#5B89A6]/30 text-white/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
+                  : "text-white/40 hover:text-white/65",
               ].join(" ")}
             >
+              {mode === "photos" ? (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="m21 15-5-5L5 21" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                  <rect x="2" y="4" width="16" height="16" rx="2" />
+                  <path d="M22 7l-4 3v4l4 3V7z" />
+                </svg>
+              )}
               {mode === "photos" ? "Photos" : "Video"}
             </button>
           ))}
@@ -213,21 +228,21 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
 
         {mediaMode === "photos" && (
           <>
-            <label className="mb-3 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+            <label className="mb-3 block text-[10px] tracking-[0.2em] text-white/45 uppercase">
               Photos of the scene
-              <span className="ml-2 normal-case tracking-normal text-[#C86B3C]">
+              <span className="ml-2 normal-case tracking-normal text-[#8FB6CE]">
                 ({imageFiles.length}/{MIN_PHOTOS})
               </span>
             </label>
 
             <div className="mb-4 flex flex-wrap gap-2">
               {previews.map((src, i) => (
-                <div key={i} className="group relative h-20 w-20 overflow-hidden bg-[#3D3830]">
+                <div key={i} className="group relative h-20 w-20 overflow-hidden rounded-lg bg-white/5">
                   <img src={src} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
                   <button
                     type="button"
                     onClick={() => handleRemovePhoto(i)}
-                    className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center bg-[#2A2520]/70 text-[10px] text-[#D8C8A8] opacity-0 transition-opacity group-hover:opacity-100"
+                    className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-black/50 text-[10px] text-white/80 opacity-0 transition-opacity group-hover:opacity-100"
                   >
                     ×
                   </button>
@@ -237,7 +252,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex h-20 w-20 items-center justify-center border border-dashed border-[#4A4035] text-[#6A5E50] transition-colors hover:border-[#C86B3C] hover:text-[#C86B3C]"
+                className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-white/20 text-white/40 transition-colors hover:border-[#5B89A6] hover:text-[#8FB6CE]"
               >
                 <span className="text-2xl leading-none">+</span>
               </button>
@@ -259,12 +274,12 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
 
         {mediaMode === "video" && (
           <>
-            <label className="mb-3 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+            <label className="mb-3 block text-[10px] tracking-[0.2em] text-white/45 uppercase">
               Video of the scene
             </label>
 
             {videoPreview ? (
-              <div className="group relative mb-4 overflow-hidden bg-[#3D3830]">
+              <div className="group relative mb-4 overflow-hidden rounded-xl bg-white/5">
                 <video
                   src={videoPreview}
                   className="h-40 w-full object-cover"
@@ -282,7 +297,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    className="h-8 w-8 text-[#D8C8A8]/60 drop-shadow transition-opacity group-hover:opacity-0"
+                    className="h-8 w-8 text-white/50 drop-shadow transition-opacity group-hover:opacity-0"
                   >
                     <polygon points="6,4 20,12 6,20" />
                   </svg>
@@ -290,11 +305,11 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
                 <button
                   type="button"
                   onClick={handleRemoveVideo}
-                  className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center bg-[#2A2520]/70 text-xs text-[#D8C8A8] opacity-0 transition-opacity group-hover:opacity-100"
+                  className="absolute top-1 right-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/50 text-xs text-white/80 opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   ×
                 </button>
-                <p className="mt-1 truncate text-[10px] text-[#6A5E50]">
+                <p className="mt-1 truncate text-[10px] text-white/40">
                   {videoFile?.name}
                 </p>
               </div>
@@ -302,7 +317,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
               <button
                 type="button"
                 onClick={() => videoInputRef.current?.click()}
-                className="mb-4 flex h-40 w-full flex-col items-center justify-center gap-2 border border-dashed border-[#4A4035] text-[#6A5E50] transition-colors hover:border-[#C86B3C] hover:text-[#C86B3C]"
+                className="mb-4 flex h-40 w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-white/20 text-white/40 transition-colors hover:border-[#5B89A6] hover:text-[#8FB6CE]"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -314,7 +329,7 @@ export default function NewMemoryForm({ onSubmit, onCancel }: NewMemoryFormProps
                   strokeLinejoin="round"
                   className="h-6 w-6"
                 >
-                  <rect x="2" y="4" width="16" height="16" rx="0" />
+                  <rect x="2" y="4" width="16" height="16" rx="2" />
                   <path d="M22 7l-4 3v4l4 3V7z" />
                 </svg>
                 <span className="text-[10px] uppercase tracking-[0.15em]">
