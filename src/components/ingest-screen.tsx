@@ -14,7 +14,7 @@ interface IngestScreenProps {
   memories?: import("./memory-grid").MemoryEntry[];
   onNewMemoryClick?: () => void;
   onMemoryClick?: (id: string) => void;
-  onGenerate?: (description: string, imageFiles: File[]) => void;
+  onGenerate?: (description: string, imageFiles: File[], videoFile: File | null) => void;
 }
 
 export default function IngestScreen({
@@ -34,8 +34,8 @@ export default function IngestScreen({
   }, [onNewMemoryClick, onGenerate]);
 
   const handleFormSubmit = useCallback(
-    (description: string, imageFiles: File[]) => {
-      onGenerate?.(description, imageFiles);
+    (description: string, imageFiles: File[], videoFile: File | null) => {
+      onGenerate?.(description, imageFiles, videoFile);
       setShowForm(false);
     },
     [onGenerate],

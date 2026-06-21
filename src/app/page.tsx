@@ -10,6 +10,7 @@ type ViewState = "input" | "loading" | "viewer";
 interface MemoryData {
   description: string;
   imageFiles: File[];
+  videoFile: File | null;
 }
 
 const DEMO_MEMORIES: MemoryEntry[] = [
@@ -28,16 +29,18 @@ export default function Home() {
   const [memoryData, setMemoryData] = useState<MemoryData>({
     description: "",
     imageFiles: [],
+    videoFile: null,
   });
 
   const handleGenerate = useCallback(
-    (description: string, imageFiles: File[]) => {
-      setMemoryData({ description, imageFiles });
+    (description: string, imageFiles: File[], videoFile: File | null) => {
+      setMemoryData({ description, imageFiles, videoFile });
       setView("loading");
 
       const form = new FormData();
       form.append("description", description);
       imageFiles.forEach((file) => form.append("photos", file));
+      if (videoFile) form.append("video", videoFile);
 
       fetch("/api/memories", { method: "POST", body: form })
         .then(async (res) => {
@@ -62,7 +65,7 @@ export default function Home() {
   }, []);
 
   const handleReturn = useCallback(() => {
-    setMemoryData({ description: "", imageFiles: [] });
+    setMemoryData({ description: "", imageFiles: [], videoFile: null });
     setView("input");
   }, []);
 
