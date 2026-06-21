@@ -146,6 +146,7 @@ export default function IngestScreen({ onGenerate }: IngestScreenProps) {
         <button
           type="button"
           disabled={!canSubmit}
+          suppressHydrationWarning
           onClick={handleSubmit}
           className={[
             "w-full py-3 rounded-xl text-xs tracking-[0.25em] lowercase transition-all",

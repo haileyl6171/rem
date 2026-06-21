@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 interface MemoryViewerProps {
+  src?: string;
   onReturn: () => void;
 }
 
@@ -14,7 +15,7 @@ const CONTROLS_MAP = [
   { key: "scroll", action: "zoom" },
 ] as const;
 
-export default function MemoryViewer({ onReturn }: MemoryViewerProps) {
+export default function MemoryViewer({ src, onReturn }: MemoryViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<{ dispose: () => void } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -36,25 +37,30 @@ export default function MemoryViewer({ onReturn }: MemoryViewerProps) {
 
         if (disposed || !containerRef.current) return;
 
+        // Clear any leftover canvas from React Strict Mode double-mount
+        containerRef.current.innerHTML = "";
+
         const viewer = new GaussianSplats3D.Viewer({
           rootElement: containerRef.current,
           cameraUp: [0, -1, 0],
-          initialCameraPosition: [0, 0, 4],
-          selfRenderMode: true,
-          gpuAcceleratedSort: true,
+          initialCameraPosition: [1, -1, 6],
+          initialCameraLookAt: [0, 0, 0],
+          gpuAcceleratedSort: false,
           sharedMemoryForWorkers: false,
         });
 
         viewerRef.current = viewer;
 
-        await viewer.addSplatScene("/sample_memory.splat", {
+        const splatUrl = src || "/bonsai.splat";
+
+        await viewer.addSplatScene(splatUrl, {
           progressiveLoad: true,
         });
 
-        if (!disposed) {
-          viewer.start();
-          setIsLoaded(true);
-        }
+        if (disposed) return;
+
+        viewer.start();
+        setIsLoaded(true);
       } catch (err) {
         if (!disposed) {
           console.error("[MemoryViewer] failed to initialise viewer:", err);
@@ -77,8 +83,11 @@ export default function MemoryViewer({ onReturn }: MemoryViewerProps) {
         }
         viewerRef.current = null;
       }
+      if (containerRef.current) {
+        containerRef.current.innerHTML = "";
+      }
     };
-  }, []);
+  }, [src]);
 
   return (
     <div className="relative h-full w-full bg-neutral-950 overflow-hidden">

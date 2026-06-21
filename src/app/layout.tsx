@@ -8,7 +8,7 @@ const geist = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "ovlt",
+  title: "rem",
   description: "transform moments into 3d gaussian splat memories",
 };
 
@@ -19,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geist.variable} h-full`}>
-      <body className="h-full bg-neutral-950 text-neutral-100 antialiased">
+      <body suppressHydrationWarning className="h-full bg-neutral-950 text-neutral-100 antialiased">
         {children}
       </body>
     </html>
