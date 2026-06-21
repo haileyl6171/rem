@@ -62,3 +62,6 @@ pipeline/third_party
 
 # generated per-memory scene splats (build artifacts, not source)
 public/scenes/
+
+# large splat scene files
+*.ply
