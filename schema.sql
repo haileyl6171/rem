@@ -23,7 +23,7 @@ create table if not exists memories (
   error       text,                            -- human-readable; set only on FAILED
 
   -- result (null until the pipeline finishes)
-  splat_url   text,                       -- public HTTPS URL of scene.splat in Storage
+  splat_url   text,                       -- public HTTPS URL of scene.ply in Storage
 
   created_at  timestamptz  default now(),
   updated_at  timestamptz  default now()

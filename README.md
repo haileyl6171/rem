@@ -4,7 +4,7 @@ Write down a moment (and drop a photo or video), and Rem turns it into a 3D
 Gaussian-splat scene you can walk through. Built at the Berkeley AI Hackathon.
 
 Text/photo → AI video (Pika) → frames → COLMAP → gaussian-splat training →
-a `.splat` you explore in the browser.
+a `scene.ply` you explore in the browser.
 
 ---
 
@@ -15,7 +15,7 @@ a `.splat` you explore in the browser.
 | **Frontend** | the user's **browser** | input UI, progress bar, 3D viewer | `src/app/**/page.tsx`, `src/components/` |
 | **Backend** | **Vercel** (Next API) | create memory, start pipeline, serve status | `src/app/api/`, `src/lib/` |
 | **DB + Storage** | **Supabase** | the memory row (status + splat URL) + files | `schema.sql`, accessed via `src/lib/` & `pipeline/` |
-| **GPU pipeline** | **Modal** | the heavy ML: video→frames→COLMAP→gsplat→`.splat` | `pipeline/` |
+| **GPU pipeline** | **Modal** | the heavy ML: (video|images)→frames→COLMAP→gsplat→`scene.ply` | `pipeline/` |
 
 Frontend + Backend are **one Next.js app** (one deploy). The pipeline is a
 **separate** Python deploy on Modal. Supabase is a hosted service.
@@ -24,7 +24,7 @@ Frontend + Backend are **one Next.js app** (one deploy). The pipeline is a
  🟦 BROWSER ──HTTP──► 🟩 VERCEL (Next API) ──trigger──► 🟥 MODAL (GPU pipeline)
      ▲                      │                                  │
      │ poll status          │ create / read row                │ write status + splat
-     │ download .splat      ▼                                  ▼
+     │ download scene.ply    ▼                                  ▼
      └──────────────── 📦 SUPABASE (Postgres + Storage) ◄───────┘
 ```
 
@@ -45,7 +45,7 @@ The browser and the GPU never talk directly — **the DB is the shared whiteboar
 
 `POST→Modal` is **async** (fire-and-forget). The pipeline runs its steps
 **in order (sync)**. The browser **polls** to learn when it's done. The big
-`.splat` is downloaded **directly from Storage** — it never passes through the backend.
+`scene.ply` is downloaded **directly from Storage** — it never passes through the backend.
 
 ---
 
@@ -72,7 +72,7 @@ hack-berkeley/
 │   ├── app.py                        🟥 Modal app + trigger endpoint           [P3]
 │   ├── run_pipeline.py               🟥 the recipe (runs steps in order)       [P3]
 │   ├── db.py                         🟥 write status to Supabase               [P3]
-│   ├── storage.py                    🟥 download inputs / upload .splat        [P3]
+│   ├── storage.py                    🟥 download inputs / upload scene.ply     [P3]
 │   ├── requirements.txt              🟥 python deps for the image              [P3]
 │   └── steps/
 │       ├── make_prompt.py            🟥 journal → video prompt (Claude)        [P3]
@@ -124,7 +124,7 @@ PENDING → GENERATING → RECONSTRUCTING → TRAINING → READY | FAILED
 ```
 memories/{id}/inputs/<file>        ← backend writes the upload
 memories/{id}/frames/frame_*.jpg   ← extract_frames writes,  colmap reads   (P3→P4 handoff)
-memories/{id}/scene.splat          ← export writes,          browser reads
+memories/{id}/scene.ply          ← export writes,          browser reads
 ```
 Bucket name: `memories` (public).
 
