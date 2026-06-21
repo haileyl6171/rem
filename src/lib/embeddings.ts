@@ -9,6 +9,13 @@
 
 import "server-only";
 
+import {
+  defaultProcessInput,
+  defaultProcessOutput,
+  getEmbeddingAttributes,
+  withSpan,
+} from "@arizeai/phoenix-otel";
+
 // voyage-3.5 outputs 1024-dim vectors. If you change the model, update this to
 // match the new dimension AND drop the Redis index (see ensureIndex in
 // memory-search.ts) so it rebuilds at the new size.
@@ -16,11 +23,7 @@ export const EMBED_DIM = 1024;
 
 const MODEL = process.env.VOYAGE_MODEL ?? "voyage-3.5";
 
-/**
- * Embed a single piece of text into a 1024-dim vector.
- * `inputType` lets Voyage optimize for storage ("document") vs lookup ("query").
- */
-export async function embed(
+async function embedImpl(
   text: string,
   inputType: "document" | "query" = "document",
 ): Promise<number[]> {
@@ -55,3 +58,24 @@ export async function embed(
   }
   return vec;
 }
+
+/**
+ * Embed a single piece of text into a 1024-dim vector.
+ * Traced as an OpenInference EMBEDDING span in Arize AX.
+ */
+export const embed = withSpan(embedImpl, {
+  name: "voyage-embed",
+  kind: "EMBEDDING",
+  attributes: {
+    "llm.provider": "voyage",
+    "llm.model_name": MODEL,
+  },
+  processInput: defaultProcessInput,
+  processOutput: (vec: number[]) => ({
+    ...defaultProcessOutput({ dimensions: vec.length }),
+    ...getEmbeddingAttributes({
+      modelName: MODEL,
+      embeddings: [{ vector: vec.slice(0, 16) }],
+    }),
+  }),
+});

@@ -8,35 +8,44 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
+import { traceChain } from "@arizeai/phoenix-otel";
 import { getMemory } from "@/lib/db";
 import { findSimilarMemories } from "@/lib/memory-search";
+import { withMemoryTrace } from "@/lib/tracing";
 
 export const runtime = "nodejs";
+
+const handleSimilar = traceChain(
+  async (request: Request, id: string) => {
+    const memory = await getMemory(id);
+    if (!memory) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+
+    const k = Number(new URL(request.url).searchParams.get("k")) || 6;
+
+    return withMemoryTrace(id, async () => {
+      try {
+        const similar = await findSimilarMemories(
+          { id: memory.id, description: memory.description ?? "" },
+          k,
+        );
+        return NextResponse.json(similar);
+      } catch (err) {
+        console.error("[similar] search failed:", err);
+        return NextResponse.json([], {
+          headers: { "x-similar-error": err instanceof Error ? err.message : "1" },
+        });
+      }
+    });
+  },
+  { name: "GET /api/memories/:id/similar" },
+);
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const { id } = await params; // ← await, per Next 16
-
-  const memory = await getMemory(id);
-  if (!memory) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
-
-  const k = Number(new URL(request.url).searchParams.get("k")) || 6;
-
-  try {
-    const similar = await findSimilarMemories(
-      { id: memory.id, description: memory.description ?? "" },
-      k,
-    );
-    return NextResponse.json(similar);
-  } catch (err) {
-    // Redis/embeddings are an enhancement — never 500 the page over them.
-    console.error("[similar] search failed:", err);
-    return NextResponse.json([], {
-      headers: { "x-similar-error": err instanceof Error ? err.message : "1" },
-    });
-  }
+  const { id } = await params;
+  return handleSimilar(request, id);
 }

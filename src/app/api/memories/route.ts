@@ -10,54 +10,56 @@
 // ============================================================================
 
 import { NextResponse } from "next/server";
+import { traceChain } from "@arizeai/phoenix-otel";
 import { createMemory, listMemories } from "@/lib/db";
 import { uploadInput } from "@/lib/storage";
 import { triggerPipeline } from "@/lib/modal";
 import { indexMemory } from "@/lib/memory-search";
+import { withMemoryTrace } from "@/lib/tracing";
 import type { CreateMemoryResponse } from "@/types/memory";
 
 export const runtime = "nodejs";
 
-export async function POST(request: Request) {
-  // The frontend sends multipart/form-data so the photo file rides along.
-  const form = await request.formData();
-  const description = String(form.get("description") ?? "").trim();
-  const photo = form.get("photo");
+const handleCreateMemory = traceChain(
+  async (request: Request) => {
+    const form = await request.formData();
+    const description = String(form.get("description") ?? "").trim();
+    const photo = form.get("photo");
 
-  if (!description && !photo) {
-    return NextResponse.json(
-      { error: "Provide a description and/or a photo." },
-      { status: 400 },
-    );
-  }
-
-  // 1. Create the row (PENDING) so we have an id to namespace storage under.
-  const id = await createMemory({ description, inputKeys: [] });
-
-  // 2. Upload the photo (if any) to memories/<id>/inputs/... and collect keys.
-  const inputKeys: string[] = [];
-  if (photo instanceof File && photo.size > 0) {
-    inputKeys.push(await uploadInput(id, photo));
-    // TODO(P2): persist inputKeys back onto the row (small update) so the
-    // pipeline can also read them from the DB if you prefer that over passing
-    // them in the trigger body. For now we pass them in the trigger (step 3).
-  }
-
-  // 3. Index the description in Redis for semantic "find similar" search.
-  //    Best-effort: an embedding/Redis hiccup must never block memory creation.
-  if (description) {
-    try {
-      await indexMemory({ id, description, status: "PENDING" });
-    } catch (err) {
-      console.error("[memory-search] index failed for", id, err);
+    if (!description && !photo) {
+      return NextResponse.json(
+        { error: "Provide a description and/or a photo." },
+        { status: 400 },
+      );
     }
-  }
 
-  // 4. Fire-and-forget: start the GPU pipeline. Returns fast.
-  await triggerPipeline({ memoryId: id, inputKeys, description });
+    const id = await createMemory({ description, inputKeys: [] });
 
-  const body: CreateMemoryResponse = { id };
-  return NextResponse.json(body, { status: 201 });
+    return withMemoryTrace(id, async () => {
+      const inputKeys: string[] = [];
+      if (photo instanceof File && photo.size > 0) {
+        inputKeys.push(await uploadInput(id, photo));
+      }
+
+      if (description) {
+        try {
+          await indexMemory({ id, description, status: "PENDING" });
+        } catch (err) {
+          console.error("[memory-search] index failed for", id, err);
+        }
+      }
+
+      await triggerPipeline({ memoryId: id, inputKeys, description });
+
+      const body: CreateMemoryResponse = { id };
+      return NextResponse.json(body, { status: 201 });
+    });
+  },
+  { name: "POST /api/memories" },
+);
+
+export async function POST(request: Request) {
+  return handleCreateMemory(request);
 }
 
 export async function GET() {
