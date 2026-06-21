@@ -32,20 +32,30 @@ async function embedImpl(
     throw new Error("Missing VOYAGE_API_KEY. See .env.local.example");
   }
 
-  const res = await fetch("https://api.voyageai.com/v1/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      input: [text],
-      model: MODEL,
-      input_type: inputType,
-    }),
-  });
-
-  if (!res.ok) {
+  // Retry on 429 (rate limit) / 5xx with exponential backoff — the free tier is
+  // only a few requests/min, so indexing + evaluation bursts get throttled.
+  let res: Response;
+  let attempt = 0;
+  for (;;) {
+    res = await fetch("https://api.voyageai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
+      },
+      body: JSON.stringify({
+        input: [text],
+        model: MODEL,
+        input_type: inputType,
+      }),
+    });
+    if (res.ok) break;
+    if ((res.status === 429 || res.status >= 500) && attempt < 6) {
+      const waitMs = Math.min(30000, 2000 * 2 ** attempt);
+      attempt++;
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
     throw new Error(`Voyage embed failed: ${res.status} ${await res.text()}`);
   }
 

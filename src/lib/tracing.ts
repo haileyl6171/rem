@@ -25,7 +25,12 @@ export function retrieverSpanOptions() {
   return {
     name: "redis-vector-knn",
     kind: "RETRIEVER" as const,
-    attributes: { "db.system": "redis", "db.operation": "FT.SEARCH KNN" },
+    attributes: {
+      "db.system": "redis",
+      "db.operation": "FT.SEARCH KNN",
+      // Records which app version produced the trace (pre/post Arize-driven filter).
+      "app.relevance_threshold": Number(process.env.MEMORY_RELEVANCE_THRESHOLD ?? 0.6),
+    },
     processOutput: (results: { id: string; description: string; score: number }[]) =>
       getRetrieverAttributes({
         documents: results.map((r) => ({

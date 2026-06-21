@@ -9,7 +9,7 @@ type ViewState = "input" | "loading" | "viewer";
 
 interface MemoryData {
   description: string;
-  imageFile: File | null;
+  imageFiles: File[];
 }
 
 const DEMO_MEMORIES: MemoryEntry[] = [
@@ -27,17 +27,17 @@ export default function Home() {
   const [view, setView] = useState<ViewState>("input");
   const [memoryData, setMemoryData] = useState<MemoryData>({
     description: "",
-    imageFile: null,
+    imageFiles: [],
   });
 
   const handleGenerate = useCallback(
-    (description: string, imageFile: File | null) => {
-      setMemoryData({ description, imageFile });
+    (description: string, imageFiles: File[]) => {
+      setMemoryData({ description, imageFiles });
       setView("loading");
 
       const form = new FormData();
       form.append("description", description);
-      if (imageFile) form.append("photo", imageFile);
+      imageFiles.forEach((file) => form.append("photos", file));
 
       fetch("/api/memories", { method: "POST", body: form })
         .then(async (res) => {
@@ -62,7 +62,7 @@ export default function Home() {
   }, []);
 
   const handleReturn = useCallback(() => {
-    setMemoryData({ description: "", imageFile: null });
+    setMemoryData({ description: "", imageFiles: [] });
     setView("input");
   }, []);
 
