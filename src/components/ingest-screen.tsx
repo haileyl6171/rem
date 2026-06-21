@@ -26,7 +26,7 @@ interface IngestScreenProps {
   memories?: MemoryEntry[];
   onNewMemoryClick?: () => void;
   onMemoryClick?: (id: string) => void;
-  onGenerate?: (description: string, imageFile: File | null) => void;
+  onGenerate?: (description: string, imageFiles: File[]) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -712,6 +712,8 @@ function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps
 //  Main IngestScreen
 // ---------------------------------------------------------------------------
 
+const MIN_PHOTOS = 3;
+
 export default function IngestScreen({
   memories = [],
   onNewMemoryClick,
@@ -720,6 +722,9 @@ export default function IngestScreen({
 }: IngestScreenProps) {
   const [showForm, setShowForm] = useState(false);
   const [description, setDescription] = useState("");
+  const [imageFiles, setImageFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleNewMemory = useCallback(() => {
     if (onNewMemoryClick) {
@@ -729,12 +734,41 @@ export default function IngestScreen({
     }
   }, [onNewMemoryClick, onGenerate]);
 
-  const handleSubmit = useCallback(() => {
-    if (!description.trim()) return;
-    onGenerate?.(description.trim(), null);
+  const handleAddPhotos = useCallback((files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+    setImageFiles((prev) => [...prev, ...newFiles]);
+    const newPreviews = newFiles.map((f) => URL.createObjectURL(f));
+    setPreviews((prev) => [...prev, ...newPreviews]);
+  }, []);
+
+  const handleRemovePhoto = useCallback((index: number) => {
+    setPreviews((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  const handleCloseForm = useCallback(() => {
+    previews.forEach((url) => URL.revokeObjectURL(url));
+    setPreviews([]);
+    setImageFiles([]);
     setDescription("");
     setShowForm(false);
-  }, [description, onGenerate]);
+  }, [previews]);
+
+  const canSubmit = imageFiles.length >= MIN_PHOTOS;
+
+  const handleSubmit = useCallback(() => {
+    if (!canSubmit) return;
+    onGenerate?.(description.trim(), imageFiles);
+    previews.forEach((url) => URL.revokeObjectURL(url));
+    setPreviews([]);
+    setImageFiles([]);
+    setDescription("");
+    setShowForm(false);
+  }, [canSubmit, description, imageFiles, previews, onGenerate]);
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#F5F2ED]">
@@ -803,20 +837,67 @@ export default function IngestScreen({
       {showForm && (
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
           <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
-            <label className="mb-4 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
-              Describe the memory
+            {/* Optional text description */}
+            <label className="mb-2 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+              Describe the scene (optional)
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="A sun-drenched afternoon in a quiet garden..."
-              rows={3}
+              rows={2}
               className="mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]"
             />
+
+            {/* Photo upload — mandatory */}
+            <label className="mb-3 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+              Photos of the scene
+              <span className="ml-2 normal-case tracking-normal text-[#C86B3C]">
+                ({imageFiles.length}/{MIN_PHOTOS})
+              </span>
+            </label>
+
+            {/* Thumbnail grid */}
+            <div className="mb-4 flex flex-wrap gap-2">
+              {previews.map((src, i) => (
+                <div key={i} className="group relative h-20 w-20 overflow-hidden bg-[#3D3830]">
+                  <img src={src} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePhoto(i)}
+                    className="absolute top-0.5 right-0.5 flex h-5 w-5 items-center justify-center bg-[#2A2520]/70 text-[10px] text-[#D8C8A8] opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+
+              {/* Add-photo button */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-20 w-20 items-center justify-center border border-dashed border-[#4A4035] text-[#6A5E50] transition-colors hover:border-[#C86B3C] hover:text-[#C86B3C]"
+              >
+                <span className="text-2xl leading-none">+</span>
+              </button>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                handleAddPhotos(e.target.files);
+                e.target.value = "";
+              }}
+            />
+
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => setShowForm(false)}
+                onClick={handleCloseForm}
                 className="flex-1 border border-[#4A4035] py-3 text-[10px] uppercase tracking-[0.3em] text-[#9A8B7A] transition-colors hover:border-[#C86B3C]"
               >
                 Cancel
@@ -824,10 +905,10 @@ export default function IngestScreen({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!description.trim()}
+                disabled={!canSubmit}
                 className={[
                   "flex-1 py-3 text-[10px] uppercase tracking-[0.3em] transition-all",
-                  description.trim()
+                  canSubmit
                     ? "bg-[#C86B3C] text-white hover:bg-[#A6552D]"
                     : "cursor-not-allowed bg-[#E2DCD0] text-[#A89F96]",
                 ].join(" ")}
