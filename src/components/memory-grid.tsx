@@ -2,7 +2,6 @@
 
 import { useRef, useMemo, useState, useCallback, useEffect } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
-import { Html } from "@react-three/drei";
 import * as THREE from "three";
 
 // ---------------------------------------------------------------------------
@@ -12,295 +11,226 @@ import * as THREE from "three";
 export interface MemoryEntry {
   id: string;
   title: string;
-  splatUrl?: string;
   colorProfile: {
     base: string;
     accent: string;
   };
+  /** Local .splat previewed on this tile (set by the demo data). */
+  splatUrl?: string;
+  /** Scene authored with the opposite vertical axis — flip it upright. */
+  flip?: boolean;
 }
 
 // ---------------------------------------------------------------------------
-//  Constants
+//  Layout — a FLAT board of tiles tilted back toward the camera (their layout),
+//  reskinned with OUR frosted-glass tiles + cool palette.
 // ---------------------------------------------------------------------------
 
 const TILE_SIZE = 0.88;
 const TILE_GAP = 0.96;
-const TILE_DEPTH = 0.06;
-const TILE_DEPTH_EMPTY = 0.03;
-
-const PLACEHOLDER_PALETTES = [
-  { base: "#1A1A1A", accent: "#3A3A3A" },
-  { base: "#0F0F0F", accent: "#2E2E2E" },
-  { base: "#222222", accent: "#444444" },
-  { base: "#181818", accent: "#383838" },
-  { base: "#111111", accent: "#333333" },
-  { base: "#1E1E1E", accent: "#404040" },
-  { base: "#151515", accent: "#353535" },
-  { base: "#0D0D0D", accent: "#2A2A2A" },
-  { base: "#202020", accent: "#424242" },
-];
-
+const TILE_THICK = 0.04;
+const BOARD_TILT = -Math.PI / 5; // lay the grid back so it reads flat
 const GRID_CENTER: [number, number, number] = [0, 0.2, 0];
 
-const TILE_ELEVATIONS = [
-  0.0, 0.04, 0.02,
-  0.03, 0.0, 0.05,
-  0.01, 0.06, 0.03,
+// Subtle per-tile height variation so the flat board still has relief.
+const TILE_ELEVATIONS = [0.0, 0.04, 0.02, 0.03, 0.0, 0.05, 0.01, 0.06, 0.03];
+
+// Cool placeholder palettes for empty slots.
+const PLACEHOLDER_PALETTES = [
+  { base: "#9FB3C4", accent: "#C2D2DE" },
+  { base: "#8FA8BC", accent: "#B6CAD8" },
+  { base: "#A7B9C8", accent: "#CBD8E2" },
 ];
 
-const TILE_ARCHETYPES = [
-  "stepped",
-  "recessed",
-  "pillar",
-  "stepped",
-  "recessed",
-  "pillar",
-  "recessed",
-  "stepped",
-  "pillar",
-];
+// ---- Small-on-top splat preview (their rendering style) -------------------
+const PREVIEW_SCALE = 0.07; // the splat renders SMALL, floating above the tile
+const PREVIEW_SPIN = 0.01; // rad/frame turntable
+// Lay the splat FLAT — parallel to the tilted board, right-side up — then it
+// turntables around the board normal. (It inherits the board tilt; we do NOT
+// stand it upright.)
+const PREVIEW_ROT: [number, number, number] = [-Math.PI / 2, 0, 0];
+// Lift the preview straight off the tile face so it floats ABOVE the tile,
+// staying parallel to it. LIFT = distance along the tile normal; RAISE = up the
+// board (kept 0 so it hovers directly over its own tile).
+const PREVIEW_LIFT = 0.34;
+const PREVIEW_RAISE = 0.0;
+
+// ---- Spotlight tour --------------------------------------------------------
+const TOUR_INTERVAL_MS = 10000; // each memory holds the spotlight for 10s
 
 // ---------------------------------------------------------------------------
-//  Shaders
+//  SplatPreview — a single splat rendered SMALL and FLOATING ABOVE the active
+//  tile (not clipped into it), lying PARALLEL to the tilted board and slowly
+//  turntabling. One instance per distinct splat; only the active one shows (so
+//  only it renders + sorts).
 // ---------------------------------------------------------------------------
-
-const TILE_VERTEX_SHADER = /* glsl */ `
-varying vec2 vUv;
-varying vec3 vWorldPos;
-varying vec3 vNormal;
-void main() {
-  vUv = uv;
-  vNormal = normalize(normalMatrix * normal);
-  vec4 wp = modelMatrix * vec4(position, 1.0);
-  vWorldPos = wp.xyz;
-  gl_Position = projectionMatrix * viewMatrix * wp;
-}
-`;
-
-const TILE_FRAGMENT_SHADER = /* glsl */ `
-uniform vec3 uBaseColor;
-uniform vec3 uAccentColor;
-uniform float uTime;
-uniform float uHover;
-
-varying vec2 vUv;
-varying vec3 vWorldPos;
-varying vec3 vNormal;
-
-void main() {
-  vec2 uv = vUv;
-  vec2 edgeDist = min(uv, 1.0 - uv);
-  float minEdge = min(edgeDist.x, edgeDist.y);
-
-  float border = 1.0 - smoothstep(0.0, 0.04, minEdge);
-  float innerLine = 1.0 - smoothstep(0.0, 0.015, abs(minEdge - 0.06));
-
-  float edgeIntensity = border + innerLine * 0.3;
-
-  vec3 borderColor = vec3(0.85 + uHover * 0.15);
-  vec3 fillColor = vec3(0.05 + uHover * 0.08);
-
-  float fillAlpha = 0.15 + uHover * 0.15;
-
-  vec3 col = mix(fillColor, borderColor, edgeIntensity);
-  float alpha = mix(fillAlpha, 0.95, edgeIntensity);
-
-  vec3 lightDir = normalize(vec3(0.6, 0.8, 1.0));
-  float diff = max(dot(vNormal, lightDir), 0.0);
-  col *= 0.7 + diff * 0.3;
-
-  gl_FragColor = vec4(col, alpha);
-}
-`;
-
-const ADD_BORDER_VERTEX_SHADER = /* glsl */ `
-uniform float uTime;
-void main() {
-  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
-  gl_Position = projectionMatrix * mvPos;
-  gl_PointSize = 11.0;
-}
-`;
-
-const ADD_BORDER_FRAGMENT_SHADER = /* glsl */ `
-uniform vec3 uColor;
-void main() {
-  vec2 c = gl_PointCoord - 0.5;
-  if (length(c) > 0.5) discard;
-  gl_FragColor = vec4(uColor, 0.85);
-}
-`;
-
-// ---------------------------------------------------------------------------
-//  Splat preview (actual gaussian splat via DropInViewer)
-// ---------------------------------------------------------------------------
-
-const PREVIEW_SCALE = 0.06;
 
 interface SplatPreviewProps {
   url: string;
-  targetPosition: [number, number, number];
+  target: [number, number, number];
   visible: boolean;
+  flip?: boolean;
 }
 
-function SplatPreview({ url, targetPosition, visible }: SplatPreviewProps) {
+function SplatPreview({ url, target, visible, flip = false }: SplatPreviewProps) {
+  // Flipped scenes are laid the other way up so they read upright in the grid.
+  const innerRot: [number, number, number] = flip
+    ? [-PREVIEW_ROT[0], PREVIEW_ROT[1], PREVIEW_ROT[2]]
+    : PREVIEW_ROT;
   const outerRef = useRef<THREE.Group>(null);
   const spinRef = useRef<THREE.Group>(null);
   const innerRef = useRef<THREE.Group>(null);
-  const viewerRef = useRef<THREE.Group | null>(null);
+  const groupRef = useRef<THREE.Group | null>(null);
   const [ready, setReady] = useState(false);
   const scaleVal = useRef(0);
-  const posRef = useRef<[number, number, number]>([...targetPosition]);
+  const pos = useRef<[number, number, number]>([...target]);
+  const wasVisible = useRef(false);
 
   useEffect(() => {
     let disposed = false;
+    const inner = innerRef.current;
 
     (async () => {
-      const GS3D: any = await import("@mkkellogg/gaussian-splats-3d");
-      if (disposed || !innerRef.current) return;
+      const GaussianSplats3D = await import("@mkkellogg/gaussian-splats-3d");
+      if (disposed || !inner) return;
 
-      const dropIn = new GS3D.DropInViewer({
+      const dropIn = new GaussianSplats3D.DropInViewer({
         gpuAcceleratedSort: false,
         sharedMemoryForWorkers: false,
+        showLoadingUI: false,
       });
-
-      viewerRef.current = dropIn;
-      dropIn.traverse((obj: THREE.Object3D) => {
-        obj.raycast = () => {};
+      const asGroup = dropIn as unknown as THREE.Group;
+      groupRef.current = asGroup;
+      asGroup.traverse((o) => {
+        o.raycast = () => {};
       });
-      innerRef.current.add(dropIn);
+      inner.add(asGroup);
 
       try {
-        await (dropIn as any).addSplatScene(url, {
-          showLoadingUI: false,
-          progressiveLoad: true,
+        await dropIn.addSplatScene(url, { showLoadingUI: false, progressiveLoad: true });
+        if (disposed) return;
+        asGroup.traverse((o) => {
+          o.raycast = () => {};
         });
-        if (!disposed) {
-          dropIn.traverse((obj: THREE.Object3D) => {
-            obj.raycast = () => {};
-            const mesh = obj as THREE.Mesh;
-            if (mesh.material) {
-              const mat = mesh.material as THREE.Material;
-              mat.stencilWrite = true;
-              mat.stencilRef = 1;
-              mat.stencilFunc = THREE.EqualStencilFunc;
-              mat.stencilFail = THREE.KeepStencilOp;
-              mat.stencilZFail = THREE.KeepStencilOp;
-              mat.stencilZPass = THREE.KeepStencilOp;
-            }
-          });
-          setReady(true);
-        }
+        setReady(true);
       } catch (err) {
-        console.warn("[SplatPreview] failed to load:", err);
+        console.warn("[SplatPreview] failed to load:", url, err);
       }
     })();
 
     return () => {
       disposed = true;
-      if (viewerRef.current) {
+      if (groupRef.current) {
         try {
-          innerRef.current?.remove(viewerRef.current);
-          (viewerRef.current as any).viewer?.dispose();
-        } catch {}
-        viewerRef.current = null;
+          inner?.remove(groupRef.current);
+          (groupRef.current as unknown as { dispose?: () => void }).dispose?.();
+        } catch {
+          // ignore teardown errors
+        }
+        groupRef.current = null;
       }
     };
   }, [url]);
 
   useFrame(() => {
-    if (!outerRef.current) return;
+    const outer = outerRef.current;
+    if (!outer) return;
 
-    const target = visible && ready ? PREVIEW_SCALE : 0;
-    scaleVal.current += (target - scaleVal.current) * 0.1;
-    outerRef.current.scale.setScalar(Math.max(scaleVal.current, 0.0001));
-    outerRef.current.visible = scaleVal.current > 0.005;
+    const show = visible && ready;
+    const targetScale = show ? PREVIEW_SCALE : 0;
+    scaleVal.current += (targetScale - scaleVal.current) * 0.1;
+    outer.scale.setScalar(Math.max(scaleVal.current, 0.0001));
+    outer.visible = scaleVal.current > 0.005;
 
-    posRef.current[0] += (targetPosition[0] - posRef.current[0]) * 0.15;
-    posRef.current[1] += (targetPosition[1] - posRef.current[1]) * 0.15;
-    posRef.current[2] += (targetPosition[2] - posRef.current[2]) * 0.15;
-    outerRef.current.position.set(
-      posRef.current[0],
-      posRef.current[1],
-      posRef.current[2],
-    );
-
-    if (spinRef.current && ready) {
-      spinRef.current.rotation.z += 0.01;
+    // Snap into place the moment this splat takes the spotlight, glide after.
+    if (show && !wasVisible.current) {
+      pos.current = [...target];
+    } else {
+      pos.current[0] += (target[0] - pos.current[0]) * 0.15;
+      pos.current[1] += (target[1] - pos.current[1]) * 0.15;
+      pos.current[2] += (target[2] - pos.current[2]) * 0.15;
     }
+    wasVisible.current = show;
+    outer.position.set(pos.current[0], pos.current[1], pos.current[2]);
+
+    // Turntable around the board normal so it spins flat, parallel to the grid.
+    if (spinRef.current && ready) spinRef.current.rotation.z += PREVIEW_SPIN;
   });
 
   return (
     <group ref={outerRef}>
       <group ref={spinRef}>
-        <group ref={innerRef} rotation={[-Math.PI / 2, 0, 0]} />
+        <group ref={innerRef} rotation={innerRot} />
       </group>
     </group>
   );
 }
 
 // ---------------------------------------------------------------------------
-//  MemoryTile
+//  GlassTile — OUR frosted-glass tile, now laid flat on the tilted board.
 // ---------------------------------------------------------------------------
 
-interface TileProps {
+interface GlassTileProps {
   position: [number, number, number];
-  baseColor: string;
-  accentColor: string;
-  depth: number;
-  archetype: string;
-  title?: string;
-  onHoverStart?: (position: [number, number, number]) => void;
+  accent: string;
+  filled: boolean;
+  index: number;
+  active?: boolean;
+  onHoverStart?: () => void;
   onHoverEnd?: () => void;
   onClick?: () => void;
 }
 
-function MemoryTile({
+function GlassTile({
   position,
-  baseColor,
-  accentColor,
-  depth,
-  archetype,
-  title,
+  accent,
+  filled,
+  index,
+  active = false,
   onHoverStart,
   onHoverEnd,
   onClick,
-}: TileProps) {
+}: GlassTileProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const matRef = useRef<THREE.ShaderMaterial>(null);
+  const frameRef = useRef<THREE.MeshStandardMaterial>(null);
   const [hovered, setHovered] = useState(false);
-  const hoverVal = useRef(0);
+  const hover = useRef(0);
+  const activeVal = useRef(0);
 
-  const uniforms = useMemo(
-    () => ({
-      uBaseColor: { value: new THREE.Color(baseColor) },
-      uAccentColor: { value: new THREE.Color(accentColor) },
-      uTime: { value: 0 },
-      uHover: { value: 0 },
-    }),
-    [baseColor, accentColor],
-  );
+  const accentColor = useMemo(() => new THREE.Color(accent), [accent]);
 
   useFrame((state) => {
-    if (!groupRef.current || !matRef.current) return;
-    const target = hovered ? 1 : 0;
-    hoverVal.current += (target - hoverVal.current) * 0.08;
-    groupRef.current.position.z = position[2] + hoverVal.current * 0.12;
-    matRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    matRef.current.uniforms.uHover.value = hoverVal.current;
+    if (!groupRef.current) return;
+    const t = state.clock.elapsedTime;
+    const start = index * 0.07;
+    const eased = 1 - Math.pow(1 - THREE.MathUtils.clamp((t - start) / 0.8, 0, 1), 3);
+
+    const h = hovered ? 1 : 0;
+    hover.current += (h - hover.current) * 0.1;
+    const a = active ? 1 : 0;
+    activeVal.current += (a - activeVal.current) * 0.1;
+    const lift = Math.max(hover.current, activeVal.current);
+
+    groupRef.current.scale.setScalar(0.6 + eased * 0.4 + activeVal.current * 0.06);
+    groupRef.current.position.z = position[2] + (1 - eased) * -0.6 + lift * 0.1;
+
+    if (frameRef.current) {
+      frameRef.current.opacity = eased * (filled ? 0.28 : 0.18) + activeVal.current * 0.14;
+      frameRef.current.emissiveIntensity = 0.28 + hover.current * 0.6 + activeVal.current * 1.0;
+    }
   });
 
-  const handlePointerOver = useCallback(
+  const handleOver = useCallback(
     (e: ThreeEvent<PointerEvent>) => {
       e.stopPropagation();
       setHovered(true);
-      onHoverStart?.(position);
+      onHoverStart?.();
       document.body.style.cursor = "pointer";
     },
-    [onHoverStart, position],
+    [onHoverStart],
   );
 
-  const handlePointerOut = useCallback(() => {
+  const handleOut = useCallback(() => {
     setHovered(false);
     onHoverEnd?.();
     document.body.style.cursor = "default";
@@ -314,247 +244,69 @@ function MemoryTile({
     [onClick],
   );
 
-  const darkerBase = useMemo(() => new THREE.Color("#1A1A1A"), []);
-
-  const lighterAccent = useMemo(() => new THREE.Color("#555555"), []);
-
-  const noRaycast = useCallback((self: THREE.Object3D) => {
-    self.raycast = () => {};
-  }, []);
-
   return (
     <group ref={groupRef} position={position}>
-      <mesh
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-        onClick={handleClick}
-      >
-        <boxGeometry args={[TILE_SIZE, TILE_SIZE, depth + 0.04]} />
-        <meshBasicMaterial colorWrite={false} depthWrite={false} />
-      </mesh>
-
-      <mesh castShadow receiveShadow ref={noRaycast as never}>
-        <boxGeometry args={[TILE_SIZE, TILE_SIZE, depth]} />
-        <shaderMaterial
-          ref={matRef}
-          vertexShader={TILE_VERTEX_SHADER}
-          fragmentShader={TILE_FRAGMENT_SHADER}
-          uniforms={uniforms}
+      {/* Clickable + frosted backing panel */}
+      <mesh onPointerOver={handleOver} onPointerOut={handleOut} onClick={handleClick}>
+        <boxGeometry args={[TILE_SIZE, TILE_SIZE, TILE_THICK]} />
+        <meshStandardMaterial
+          ref={frameRef}
+          color="#FFFFFF"
+          emissive={accentColor}
+          emissiveIntensity={0.28}
           transparent
+          opacity={0.24}
+          roughness={0.1}
+          metalness={0}
         />
       </mesh>
 
-      {archetype === "stepped" && (
-        <>
-          <mesh position={[0, 0, depth / 2 + 0.003]} castShadow ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.7, TILE_SIZE * 0.7, 0.008]} />
-            <meshStandardMaterial
-              color={darkerBase}
-              roughness={0.9}
-              metalness={0.05}
-            />
-          </mesh>
-          <mesh position={[TILE_SIZE * 0.2, -TILE_SIZE * 0.15, depth / 2 + 0.012]} castShadow ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.18, TILE_SIZE * 0.22, 0.015]} />
-            <meshStandardMaterial
-              color={lighterAccent}
-              roughness={0.85}
-              metalness={0.05}
-            />
-          </mesh>
-        </>
-      )}
-      {archetype === "recessed" && (
-        <>
-          <mesh position={[0, 0, depth / 2 - 0.004]} ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.6, TILE_SIZE * 0.6, 0.006]} />
-            <meshStandardMaterial
-              color={darkerBase}
-              roughness={0.95}
-              metalness={0.02}
-            />
-          </mesh>
-          <mesh position={[-TILE_SIZE * 0.22, TILE_SIZE * 0.22, depth / 2 + 0.006]} castShadow ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.12, TILE_SIZE * 0.4, 0.01]} />
-            <meshStandardMaterial
-              color={lighterAccent}
-              roughness={0.8}
-              metalness={0.08}
-            />
-          </mesh>
-        </>
-      )}
-      {archetype === "pillar" && (
-        <>
-          <mesh position={[0, 0, depth / 2 + 0.018]} castShadow ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.15, TILE_SIZE * 0.15, 0.035]} />
-            <meshStandardMaterial
-              color={lighterAccent}
-              roughness={0.75}
-              metalness={0.1}
-            />
-          </mesh>
-          <mesh position={[0, 0, depth / 2 + 0.003]} castShadow ref={noRaycast as never}>
-            <boxGeometry args={[TILE_SIZE * 0.35, TILE_SIZE * 0.35, 0.006]} />
-            <meshStandardMaterial
-              color={darkerBase}
-              roughness={0.9}
-              metalness={0.05}
-            />
-          </mesh>
-        </>
-      )}
-
-      <TileSurfaceParticles baseColor={baseColor} accentColor={accentColor} depth={depth} />
-
-      {title && (
-        <Html
-          position={[0, TILE_SIZE / 2 + 0.12, depth / 2 + 0.02]}
-          center
-          style={{ pointerEvents: "none" }}
-        >
-          <div
-            style={{
-              opacity: hovered ? 1 : 0,
-              transform: hovered
-                ? "translateY(0) scale(1)"
-                : "translateY(8px) scale(0.85)",
-              transition: "opacity 0.25s ease-out, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-              background: "#0A0A0A",
-              border: "1px solid #444",
-              padding: "6px 14px",
-              whiteSpace: "nowrap",
-              fontFamily: "var(--font-space-grotesk), sans-serif",
-              fontSize: "11px",
-              color: "#E0E0E0",
-              letterSpacing: "0.06em",
-              borderRadius: "6px",
-            }}
-          >
-            {title}
-          </div>
-        </Html>
-      )}
+      {/* Cool emissive border frame — brightest on the active / hovered tile */}
+      <lineSegments>
+        <edgesGeometry args={[new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_THICK)]} />
+        <lineBasicMaterial color={accent} transparent opacity={hovered || active ? 1 : 0.65} />
+      </lineSegments>
     </group>
   );
 }
 
 // ---------------------------------------------------------------------------
-//  TileSurfaceParticles
+//  AddTile — OUR glass "create memory" cell, laid flat on the board.
 // ---------------------------------------------------------------------------
 
-function TileSurfaceParticles({
-  baseColor,
-  accentColor,
-  depth,
+function AddTile({
+  position,
+  index,
+  onClick,
 }: {
-  baseColor: string;
-  accentColor: string;
-  depth: number;
-}) {
-  const ref = useRef<THREE.Points>(null);
-  const count = 300;
-
-  const { positions, colors } = useMemo(() => {
-    const pos = new Float32Array(count * 3);
-    const col = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const x = (Math.random() - 0.5) * TILE_SIZE * 0.95;
-      const y = (Math.random() - 0.5) * TILE_SIZE * 0.95;
-      const z = depth / 2 + Math.random() * 0.025 + 0.002;
-      pos[i * 3] = x;
-      pos[i * 3 + 1] = y;
-      pos[i * 3 + 2] = z;
-
-      const gray = 0.3 + Math.random() * 0.5;
-      col[i * 3] = gray;
-      col[i * 3 + 1] = gray;
-      col[i * 3 + 2] = gray;
-    }
-    return { positions: pos, colors: col };
-  }, [baseColor, accentColor, depth, count]);
-
-  useFrame((state) => {
-    if (!ref.current) return;
-    const geo = ref.current.geometry;
-    const posAttr = geo.getAttribute("position") as THREE.BufferAttribute;
-    const t = state.clock.elapsedTime;
-    for (let i = 0; i < count; i++) {
-      const baseZ = depth / 2 + 0.002;
-      const drift = Math.sin(t * 0.5 + i * 0.7) * 0.008 + Math.cos(t * 0.3 + i * 1.3) * 0.005;
-      posAttr.setZ(i, baseZ + Math.random() * 0.02 + drift);
-    }
-    posAttr.needsUpdate = true;
-  });
-
-  return (
-    <points ref={ref}>
-      <bufferGeometry>
-        <bufferAttribute attach="attributes-position" args={[positions, 3]} />
-        <bufferAttribute attach="attributes-color" args={[colors, 3]} />
-      </bufferGeometry>
-      <pointsMaterial
-        size={0.008}
-        vertexColors
-        transparent
-        opacity={0.45}
-        sizeAttenuation
-        depthWrite={false}
-      />
-    </points>
-  );
-}
-
-// ---------------------------------------------------------------------------
-//  AddTile
-// ---------------------------------------------------------------------------
-
-interface AddTileProps {
   position: [number, number, number];
+  index: number;
   onClick?: () => void;
-}
-
-function AddTile({ position, onClick }: AddTileProps) {
+}) {
   const groupRef = useRef<THREE.Group>(null);
-  const borderMatRef = useRef<THREE.ShaderMaterial>(null);
-  const plusMatRef = useRef<THREE.ShaderMaterial>(null);
   const [hovered, setHovered] = useState(false);
-  const hoverVal = useRef(0);
-
-  const defaultColor = useMemo(() => new THREE.Color("#666666"), []);
-  const hoverColor = useMemo(() => new THREE.Color("#CCCCCC"), []);
-  const lerpColor = useMemo(() => new THREE.Color(), []);
+  const hover = useRef(0);
 
   useFrame((state) => {
     if (!groupRef.current) return;
-    const target = hovered ? 1 : 0;
-    hoverVal.current += (target - hoverVal.current) * 0.08;
-    groupRef.current.position.z = position[2] + hoverVal.current * 0.08;
-
-    lerpColor.copy(defaultColor).lerp(hoverColor, hoverVal.current);
     const t = state.clock.elapsedTime;
-
-    if (borderMatRef.current) {
-      borderMatRef.current.uniforms.uTime.value = t;
-      borderMatRef.current.uniforms.uColor.value.copy(lerpColor);
-    }
-    if (plusMatRef.current) {
-      plusMatRef.current.uniforms.uTime.value = t;
-      plusMatRef.current.uniforms.uColor.value.copy(lerpColor);
-    }
+    const start = index * 0.07;
+    const eased = 1 - Math.pow(1 - THREE.MathUtils.clamp((t - start) / 0.8, 0, 1), 3);
+    const h = hovered ? 1 : 0;
+    hover.current += (h - hover.current) * 0.1;
+    groupRef.current.scale.setScalar(0.6 + eased * 0.4);
+    groupRef.current.position.z = position[2] + (1 - eased) * -0.6 + hover.current * 0.08;
   });
 
-  const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
+  const handleOver = useCallback((e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     setHovered(true);
     document.body.style.cursor = "pointer";
   }, []);
-
-  const handlePointerOut = useCallback(() => {
+  const handleOut = useCallback(() => {
     setHovered(false);
     document.body.style.cursor = "default";
   }, []);
-
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
@@ -563,120 +315,66 @@ function AddTile({ position, onClick }: AddTileProps) {
     [onClick],
   );
 
-  const borderPositions = useMemo(() => {
-    const pointsPerEdge = 120;
-    const totalPoints = pointsPerEdge * 4;
-    const pos = new Float32Array(totalPoints * 3);
-    const half = TILE_SIZE / 2;
-    const z = TILE_DEPTH_EMPTY / 2 + 0.002;
-    let idx = 0;
-
-    for (let i = 0; i < pointsPerEdge; i++) {
-      const t = (i / pointsPerEdge) * TILE_SIZE - half;
-      pos[idx * 3] = t; pos[idx * 3 + 1] = half; pos[idx * 3 + 2] = z; idx++;
-      pos[idx * 3] = t; pos[idx * 3 + 1] = -half; pos[idx * 3 + 2] = z; idx++;
-      pos[idx * 3] = -half; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
-      pos[idx * 3] = half; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
-    }
-
-    return pos;
-  }, []);
-
-  const borderUniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uColor: { value: new THREE.Color("#666666") },
-    }),
-    [],
-  );
-
-  const plusUniforms = useMemo(
-    () => ({
-      uTime: { value: 0 },
-      uColor: { value: new THREE.Color("#666666") },
-    }),
-    [],
-  );
-
-  const plusPositions = useMemo(() => {
-    const hLen = 0.12;
-    const z = TILE_DEPTH_EMPTY / 2 + 0.002;
-    const count = 24;
-    const pos = new Float32Array(count * 2 * 3);
-    let idx = 0;
-    for (let i = 0; i < count; i++) {
-      const t = (i / (count - 1)) * 2 * hLen - hLen;
-      pos[idx * 3] = t; pos[idx * 3 + 1] = 0; pos[idx * 3 + 2] = z; idx++;
-    }
-    for (let i = 0; i < count; i++) {
-      const t = (i / (count - 1)) * 2 * hLen - hLen;
-      pos[idx * 3] = 0; pos[idx * 3 + 1] = t; pos[idx * 3 + 2] = z; idx++;
-    }
-    return pos;
-  }, []);
+  const plusColor = hovered ? "#3E6E8E" : "#5B89A6";
 
   return (
     <group ref={groupRef} position={position}>
-      <mesh
-        onPointerOver={handlePointerOver}
-        onPointerOut={handlePointerOut}
-        onClick={handleClick}
-      >
-        <boxGeometry args={[TILE_SIZE, TILE_SIZE, TILE_DEPTH_EMPTY]} />
-        <meshBasicMaterial colorWrite={false} depthWrite={false} />
+      <mesh onPointerOver={handleOver} onPointerOut={handleOut} onClick={handleClick}>
+        <boxGeometry args={[TILE_SIZE, TILE_SIZE, TILE_THICK]} />
+        <meshStandardMaterial
+          color="#FFFFFF"
+          emissive="#5B89A6"
+          emissiveIntensity={hovered ? 0.5 : 0.2}
+          transparent
+          opacity={0.14}
+          roughness={0.1}
+        />
       </mesh>
 
-      <points>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[borderPositions, 3]} />
-        </bufferGeometry>
-        <shaderMaterial
-          ref={borderMatRef}
-          vertexShader={ADD_BORDER_VERTEX_SHADER}
-          fragmentShader={ADD_BORDER_FRAGMENT_SHADER}
-          uniforms={borderUniforms}
-          transparent
-          depthWrite={false}
-        />
-      </points>
+      <lineSegments>
+        <edgesGeometry args={[new THREE.BoxGeometry(TILE_SIZE, TILE_SIZE, TILE_THICK)]} />
+        <lineBasicMaterial color={plusColor} transparent opacity={0.7} />
+      </lineSegments>
 
-      <points>
-        <bufferGeometry>
-          <bufferAttribute attach="attributes-position" args={[plusPositions, 3]} />
-        </bufferGeometry>
-        <shaderMaterial
-          ref={plusMatRef}
-          vertexShader={ADD_BORDER_VERTEX_SHADER}
-          fragmentShader={ADD_BORDER_FRAGMENT_SHADER}
-          uniforms={plusUniforms}
-          transparent
-          depthWrite={false}
-        />
-      </points>
+      {/* Plus sign */}
+      <mesh position={[0, 0, TILE_THICK / 2 + 0.01]}>
+        <boxGeometry args={[0.24, 0.03, 0.01]} />
+        <meshBasicMaterial color={plusColor} />
+      </mesh>
+      <mesh position={[0, 0, TILE_THICK / 2 + 0.01]}>
+        <boxGeometry args={[0.03, 0.24, 0.01]} />
+        <meshBasicMaterial color={plusColor} />
+      </mesh>
     </group>
   );
 }
 
 // ---------------------------------------------------------------------------
-//  ParticleDust
+//  ParticleDust — cool ambient motes.
 // ---------------------------------------------------------------------------
 
-function ParticleDust({ count = 200 }: { count?: number }) {
+// Deterministic pseudo-random in [0,1) — pure, safe to call in render.
+function pseudo(n: number): number {
+  const s = Math.sin(n * 12.9898) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+function ParticleDust({ count = 180 }: { count?: number }) {
   const ref = useRef<THREE.Points>(null);
 
   const positions = useMemo(() => {
-    const pos = new Float32Array(count * 3);
+    const p = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * 5;
-      pos[i * 3 + 1] = (Math.random() - 0.5) * 5;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * 1.5 + 0.3;
+      p[i * 3] = (pseudo(i * 3 + 1) - 0.5) * 6;
+      p[i * 3 + 1] = (pseudo(i * 3 + 2) - 0.5) * 5;
+      p[i * 3 + 2] = (pseudo(i * 3 + 3) - 0.5) * 2 - 0.5;
     }
-    return pos;
+    return p;
   }, [count]);
 
   useFrame((state) => {
     if (!ref.current) return;
-    ref.current.rotation.z = state.clock.elapsedTime * 0.006;
+    ref.current.rotation.z = state.clock.elapsedTime * 0.005;
   });
 
   return (
@@ -685,10 +383,10 @@ function ParticleDust({ count = 200 }: { count?: number }) {
         <bufferAttribute attach="attributes-position" args={[positions, 3]} />
       </bufferGeometry>
       <pointsMaterial
-        size={0.006}
-        color="#888888"
+        size={0.007}
+        color="#AEC2D2"
         transparent
-        opacity={0.25}
+        opacity={0.4}
         sizeAttenuation
         depthWrite={false}
       />
@@ -706,131 +404,114 @@ interface GridSceneProps {
   onMemoryClick?: (id: string) => void;
 }
 
-export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps) {
+export default function GridScene({
+  memories,
+  onNewMemoryClick,
+  onMemoryClick,
+}: GridSceneProps) {
   const groupRef = useRef<THREE.Group>(null);
-  const [mountedUrls, setMountedUrls] = useState<Set<string>>(new Set());
-  const [hoverTarget, setHoverTarget] = useState<{
-    position: [number, number, number];
-    splatUrl: string;
-  } | null>(null);
 
-  const handleTileHoverStart = useCallback(
-    (position: [number, number, number], splatUrl: string) => {
-      setMountedUrls(prev => {
-        if (prev.has(splatUrl)) return prev;
-        return new Set([...prev, splatUrl]);
-      });
-      setHoverTarget({ position, splatUrl });
-    },
-    [],
-  );
-
-  const handleTileHoverEnd = useCallback(() => {
-    setHoverTarget(null);
-  }, []);
-
-  const cols = 3;
-  const rows = Math.ceil((memories.length + 1) / cols);
-
+  // 3x3 board: up to 8 memories; the last cell is always the "+" add tile.
   const slots = useMemo(() => {
-    const result: Array<{ row: number; col: number; memory: MemoryEntry }> = [];
-    for (let i = 0; i < memories.length; i++) {
-      result.push({
-        row: Math.floor(i / cols),
-        col: i % cols,
-        memory: memories[i],
-      });
+    const result: Array<{ memory: MemoryEntry | null; pos: [number, number, number] }> = [];
+    let memIdx = 0;
+    let i = 0;
+    for (let row = 0; row < 3; row++) {
+      for (let col = 0; col < 3; col++) {
+        const x = (col - 1) * TILE_GAP;
+        const y = (1 - row) * TILE_GAP;
+        const z = TILE_ELEVATIONS[i];
+        if (row === 2 && col === 2) {
+          result.push({ memory: null, pos: [x, y, z] }); // add tile
+        } else if (memIdx < memories.length) {
+          result.push({ memory: memories[memIdx++], pos: [x, y, z] });
+        } else {
+          result.push({ memory: null, pos: [x, y, z] });
+        }
+        i++;
+      }
     }
     return result;
   }, [memories]);
 
-  const addTileRow = Math.floor(memories.length / cols);
-  const addTileCol = memories.length % cols;
+  // The tour visits every filled memory tile (that has a splat), in grid order.
+  const tourStops = useMemo(
+    () =>
+      slots
+        .map((s, idx) => ({ slot: idx, pos: s.pos, path: s.memory?.splatUrl }))
+        .filter(
+          (s): s is { slot: number; pos: [number, number, number]; path: string } =>
+            !!s.path && s.slot !== 8,
+        ),
+    [slots],
+  );
 
-  useFrame(() => {
+  // Auto-advance the spotlight; hovering a tile overrides the current stop.
+  const [stop, setStop] = useState(0);
+  const [hoverSlot, setHoverSlot] = useState<number | null>(null);
+  useEffect(() => {
+    if (tourStops.length === 0) return;
+    const id = setInterval(
+      () => setStop((s) => (s + 1) % tourStops.length),
+      TOUR_INTERVAL_MS,
+    );
+    return () => clearInterval(id);
+  }, [tourStops.length]);
+
+  const tourSlot = tourStops.length > 0 ? tourStops[stop % tourStops.length].slot : -1;
+  const hoverIsSplat =
+    hoverSlot != null && !!slots[hoverSlot]?.memory?.splatUrl && hoverSlot !== 8;
+  const activeSlot = hoverIsSplat ? (hoverSlot as number) : tourSlot;
+  const activeMemory = activeSlot >= 0 ? slots[activeSlot]?.memory : null;
+  const activeUrl = activeMemory?.splatUrl ?? null;
+  const activePos = activeSlot >= 0 ? slots[activeSlot].pos : null;
+
+  // Where the small splat floats: lifted off the active tile (above + in front).
+  const previewTarget: [number, number, number] = activePos
+    ? [activePos[0], activePos[1] + PREVIEW_RAISE, activePos[2] + PREVIEW_LIFT]
+    : [0, 0, -1];
+
+  useFrame((state) => {
     if (!groupRef.current) return;
+    const t = state.clock.elapsedTime;
+    groupRef.current.position.y = GRID_CENTER[1] + Math.sin(t * 0.3) * 0.02;
   });
 
   return (
-    <group
-      ref={groupRef}
-      rotation={[-Math.PI / 5, 0, 0]}
-      position={GRID_CENTER}
-    >
-      {slots.map(({ row, col, memory }, i) => {
-        const x = (col - 1) * TILE_GAP;
-        const y = ((rows - 1) / 2 - row) * TILE_GAP;
-        const z = TILE_ELEVATIONS[i] || 0;
-
+    <group ref={groupRef} position={GRID_CENTER} rotation={[BOARD_TILT, 0, 0]}>
+      {slots.map(({ memory, pos }, i) => {
+        if (i === 8) {
+          return <AddTile key="add" position={pos} index={i} onClick={onNewMemoryClick} />;
+        }
+        const palette =
+          memory?.colorProfile ??
+          PLACEHOLDER_PALETTES[i % PLACEHOLDER_PALETTES.length];
         return (
-          <MemoryTile
-            key={memory.id}
-            position={[x, y, z]}
-            baseColor={memory.colorProfile.base}
-            accentColor={memory.colorProfile.accent}
-            depth={TILE_DEPTH}
-            archetype={TILE_ARCHETYPES[i] || "stepped"}
-            title={memory.title}
-            onHoverStart={
-              memory.splatUrl
-                ? (pos) => handleTileHoverStart(pos, memory.splatUrl!)
-                : undefined
-            }
-            onHoverEnd={memory.splatUrl ? handleTileHoverEnd : undefined}
-            onClick={() => onMemoryClick?.(memory.id)}
+          <GlassTile
+            key={memory?.id ?? `empty-${i}`}
+            position={pos}
+            accent={palette.accent}
+            filled={!!memory}
+            index={i}
+            active={i === activeSlot}
+            onHoverStart={memory?.splatUrl ? () => setHoverSlot(i) : undefined}
+            onHoverEnd={memory?.splatUrl ? () => setHoverSlot(null) : undefined}
+            onClick={memory ? () => onMemoryClick?.(memory.id) : onNewMemoryClick}
           />
         );
       })}
 
-      {hoverTarget && (
-        <mesh
-          position={[
-            hoverTarget.position[0],
-            hoverTarget.position[1],
-            hoverTarget.position[2] + TILE_DEPTH / 2 + 0.12,
-          ]}
-          renderOrder={-1}
-        >
-          <planeGeometry args={[TILE_SIZE, TILE_SIZE]} />
-          <meshBasicMaterial
-            colorWrite={false}
-            depthWrite={false}
-            depthTest={false}
-            stencilWrite={true}
-            stencilRef={1}
-            stencilFunc={THREE.AlwaysStencilFunc}
-            stencilFail={THREE.KeepStencilOp}
-            stencilZFail={THREE.KeepStencilOp}
-            stencilZPass={THREE.ReplaceStencilOp}
-          />
-        </mesh>
-      )}
-
-      {[...mountedUrls].map(url => (
+      {/* Only the active scene is loaded/rendered — it's disposed when the tour
+          moves on, so the huge real .ply files never pile up in memory. */}
+      {activeUrl && (
         <SplatPreview
-          key={url}
-          url={url}
-          targetPosition={
-            hoverTarget?.splatUrl === url
-              ? [
-                  hoverTarget.position[0],
-                  hoverTarget.position[1],
-                  hoverTarget.position[2] + TILE_DEPTH / 2 + 0.15,
-                ]
-              : [0, 0, -1]
-          }
-          visible={hoverTarget?.splatUrl === url}
+          key={activeUrl}
+          url={activeUrl}
+          target={previewTarget}
+          visible
+          flip={!!activeMemory?.flip}
         />
-      ))}
-
-      <AddTile
-        position={[
-          (addTileCol - 1) * TILE_GAP,
-          ((rows - 1) / 2 - addTileRow) * TILE_GAP,
-          TILE_ELEVATIONS[memories.length] || 0,
-        ]}
-        onClick={onNewMemoryClick}
-      />
+      )}
 
       <ParticleDust />
     </group>

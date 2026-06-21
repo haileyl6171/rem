@@ -31,6 +31,7 @@ interface SpeechRecognition extends EventTarget {
   abort(): void;
 }
 
+// eslint-disable-next-line no-var -- a global declaration must use `var`
 declare var SpeechRecognition: {
   new (): SpeechRecognition;
   prototype: SpeechRecognition;
