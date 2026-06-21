@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useMemo, useState, useCallback } from "react";
+import { useRef, useMemo, useState, useCallback, useEffect } from "react";
 import { useFrame, ThreeEvent } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import * as THREE from "three";
@@ -12,6 +12,7 @@ import * as THREE from "three";
 export interface MemoryEntry {
   id: string;
   title: string;
+  splatUrl?: string;
   colorProfile: {
     base: string;
     accent: string;
@@ -28,15 +29,15 @@ const TILE_DEPTH = 0.06;
 const TILE_DEPTH_EMPTY = 0.03;
 
 const PLACEHOLDER_PALETTES = [
-  { base: "#8B4513", accent: "#A65E2E" },
-  { base: "#C87533", accent: "#E09050" },
-  { base: "#A0522D", accent: "#BF6F45" },
-  { base: "#D4883A", accent: "#E8A060" },
-  { base: "#6B3A2A", accent: "#8B5540" },
-  { base: "#CC6B3C", accent: "#E08858" },
-  { base: "#8E6540", accent: "#B08560" },
-  { base: "#5C3D2E", accent: "#7A5845" },
-  { base: "#B56A40", accent: "#D08858" },
+  { base: "#1A1A1A", accent: "#3A3A3A" },
+  { base: "#0F0F0F", accent: "#2E2E2E" },
+  { base: "#222222", accent: "#444444" },
+  { base: "#181818", accent: "#383838" },
+  { base: "#111111", accent: "#333333" },
+  { base: "#1E1E1E", accent: "#404040" },
+  { base: "#151515", accent: "#353535" },
+  { base: "#0D0D0D", accent: "#2A2A2A" },
+  { base: "#202020", accent: "#424242" },
 ];
 
 const GRID_CENTER: [number, number, number] = [0, 0.2, 0];
@@ -86,71 +87,27 @@ varying vec2 vUv;
 varying vec3 vWorldPos;
 varying vec3 vNormal;
 
-float hash(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
-}
-
-float hash3(vec3 p) {
-  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
-}
-
-float noise2d(vec2 p) {
-  vec2 i = floor(p);
-  vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  float a = hash(i);
-  float b = hash(i + vec2(1.0, 0.0));
-  float c = hash(i + vec2(0.0, 1.0));
-  float d = hash(i + vec2(1.0, 1.0));
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float fbm(vec2 p) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 5; i++) {
-    v += a * noise2d(p);
-    p *= 2.1;
-    a *= 0.48;
-  }
-  return v;
-}
-
 void main() {
   vec2 uv = vUv;
-  float t = uTime * 0.3;
-
-  float grain = hash(floor(uv * 200.0));
-  float grainMask = smoothstep(0.3, 0.7, grain);
-  float fineGrain = hash(floor(uv * 500.0 + t * 2.0));
-
-  float f = fbm(uv * 6.0 + t * 0.15);
-  float f2 = fbm(uv * 12.0 - t * 0.1);
-
   vec2 edgeDist = min(uv, 1.0 - uv);
-  float edgeFactor = smoothstep(0.0, 0.12, min(edgeDist.x, edgeDist.y));
-  float dissolve = smoothstep(0.0, 0.08, min(edgeDist.x, edgeDist.y) + (grain - 0.5) * 0.06);
+  float minEdge = min(edgeDist.x, edgeDist.y);
 
-  vec3 col = mix(uBaseColor, uAccentColor, f * 0.5 + uHover * 0.3);
-  col = mix(col, uAccentColor * 1.2, f2 * 0.15);
+  float border = 1.0 - smoothstep(0.0, 0.04, minEdge);
+  float innerLine = 1.0 - smoothstep(0.0, 0.015, abs(minEdge - 0.06));
 
-  float innerGlow = smoothstep(0.0, 0.35, min(edgeDist.x, edgeDist.y));
-  col += uAccentColor * innerGlow * 0.08 * (1.0 + uHover * 2.0);
+  float edgeIntensity = border + innerLine * 0.3;
 
-  col *= 0.92 + grainMask * 0.08;
-  col += (fineGrain - 0.5) * 0.03;
+  vec3 borderColor = vec3(0.85 + uHover * 0.15);
+  vec3 fillColor = vec3(0.05 + uHover * 0.08);
 
-  float sat = 1.0 + uHover * 0.3;
-  vec3 gray = vec3(dot(col, vec3(0.299, 0.587, 0.114)));
-  col = mix(gray, col, sat);
-  col += uAccentColor * uHover * 0.12 * innerGlow;
+  float fillAlpha = 0.15 + uHover * 0.15;
+
+  vec3 col = mix(fillColor, borderColor, edgeIntensity);
+  float alpha = mix(fillAlpha, 0.95, edgeIntensity);
 
   vec3 lightDir = normalize(vec3(0.6, 0.8, 1.0));
   float diff = max(dot(vNormal, lightDir), 0.0);
-  float lighting = 0.55 + diff * 0.45;
-  col *= lighting;
-
-  float alpha = dissolve * (0.92 + grainMask * 0.08);
+  col *= 0.7 + diff * 0.3;
 
   gl_FragColor = vec4(col, alpha);
 }
@@ -175,6 +132,114 @@ void main() {
 `;
 
 // ---------------------------------------------------------------------------
+//  Splat preview (actual gaussian splat via DropInViewer)
+// ---------------------------------------------------------------------------
+
+const PREVIEW_SCALE = 0.06;
+
+interface SplatPreviewProps {
+  url: string;
+  targetPosition: [number, number, number];
+  visible: boolean;
+}
+
+function SplatPreview({ url, targetPosition, visible }: SplatPreviewProps) {
+  const outerRef = useRef<THREE.Group>(null);
+  const spinRef = useRef<THREE.Group>(null);
+  const innerRef = useRef<THREE.Group>(null);
+  const viewerRef = useRef<THREE.Group | null>(null);
+  const [ready, setReady] = useState(false);
+  const scaleVal = useRef(0);
+  const posRef = useRef<[number, number, number]>([...targetPosition]);
+
+  useEffect(() => {
+    let disposed = false;
+
+    (async () => {
+      const GS3D: any = await import("@mkkellogg/gaussian-splats-3d");
+      if (disposed || !innerRef.current) return;
+
+      const dropIn = new GS3D.DropInViewer({
+        gpuAcceleratedSort: false,
+        sharedMemoryForWorkers: false,
+      });
+
+      viewerRef.current = dropIn;
+      dropIn.traverse((obj: THREE.Object3D) => {
+        obj.raycast = () => {};
+      });
+      innerRef.current.add(dropIn);
+
+      try {
+        await (dropIn as any).addSplatScene(url, {
+          showLoadingUI: false,
+          progressiveLoad: true,
+        });
+        if (!disposed) {
+          dropIn.traverse((obj: THREE.Object3D) => {
+            obj.raycast = () => {};
+            const mesh = obj as THREE.Mesh;
+            if (mesh.material) {
+              const mat = mesh.material as THREE.Material;
+              mat.stencilWrite = true;
+              mat.stencilRef = 1;
+              mat.stencilFunc = THREE.EqualStencilFunc;
+              mat.stencilFail = THREE.KeepStencilOp;
+              mat.stencilZFail = THREE.KeepStencilOp;
+              mat.stencilZPass = THREE.KeepStencilOp;
+            }
+          });
+          setReady(true);
+        }
+      } catch (err) {
+        console.warn("[SplatPreview] failed to load:", err);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      if (viewerRef.current) {
+        try {
+          innerRef.current?.remove(viewerRef.current);
+          (viewerRef.current as any).viewer?.dispose();
+        } catch {}
+        viewerRef.current = null;
+      }
+    };
+  }, [url]);
+
+  useFrame(() => {
+    if (!outerRef.current) return;
+
+    const target = visible && ready ? PREVIEW_SCALE : 0;
+    scaleVal.current += (target - scaleVal.current) * 0.1;
+    outerRef.current.scale.setScalar(Math.max(scaleVal.current, 0.0001));
+    outerRef.current.visible = scaleVal.current > 0.005;
+
+    posRef.current[0] += (targetPosition[0] - posRef.current[0]) * 0.15;
+    posRef.current[1] += (targetPosition[1] - posRef.current[1]) * 0.15;
+    posRef.current[2] += (targetPosition[2] - posRef.current[2]) * 0.15;
+    outerRef.current.position.set(
+      posRef.current[0],
+      posRef.current[1],
+      posRef.current[2],
+    );
+
+    if (spinRef.current && ready) {
+      spinRef.current.rotation.z += 0.01;
+    }
+  });
+
+  return (
+    <group ref={outerRef}>
+      <group ref={spinRef}>
+        <group ref={innerRef} rotation={[Math.PI / 2, 0, 0]} />
+      </group>
+    </group>
+  );
+}
+
+// ---------------------------------------------------------------------------
 //  MemoryTile
 // ---------------------------------------------------------------------------
 
@@ -185,6 +250,8 @@ interface TileProps {
   depth: number;
   archetype: string;
   title?: string;
+  onHoverStart?: (position: [number, number, number]) => void;
+  onHoverEnd?: () => void;
   onClick?: () => void;
 }
 
@@ -195,6 +262,8 @@ function MemoryTile({
   depth,
   archetype,
   title,
+  onHoverStart,
+  onHoverEnd,
   onClick,
 }: TileProps) {
   const groupRef = useRef<THREE.Group>(null);
@@ -221,16 +290,21 @@ function MemoryTile({
     matRef.current.uniforms.uHover.value = hoverVal.current;
   });
 
-  const handlePointerOver = useCallback((e: ThreeEvent<PointerEvent>) => {
-    e.stopPropagation();
-    setHovered(true);
-    document.body.style.cursor = "pointer";
-  }, []);
+  const handlePointerOver = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      e.stopPropagation();
+      setHovered(true);
+      onHoverStart?.(position);
+      document.body.style.cursor = "pointer";
+    },
+    [onHoverStart, position],
+  );
 
   const handlePointerOut = useCallback(() => {
     setHovered(false);
+    onHoverEnd?.();
     document.body.style.cursor = "default";
-  }, []);
+  }, [onHoverEnd]);
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
@@ -240,17 +314,9 @@ function MemoryTile({
     [onClick],
   );
 
-  const darkerBase = useMemo(() => {
-    const c = new THREE.Color(baseColor);
-    c.multiplyScalar(0.65);
-    return c;
-  }, [baseColor]);
+  const darkerBase = useMemo(() => new THREE.Color("#1A1A1A"), []);
 
-  const lighterAccent = useMemo(() => {
-    const c = new THREE.Color(accentColor);
-    c.multiplyScalar(1.15);
-    return c;
-  }, [accentColor]);
+  const lighterAccent = useMemo(() => new THREE.Color("#555555"), []);
 
   const noRaycast = useCallback((self: THREE.Object3D) => {
     self.raycast = () => {};
@@ -354,14 +420,15 @@ function MemoryTile({
                 ? "translateY(0) scale(1)"
                 : "translateY(8px) scale(0.85)",
               transition: "opacity 0.25s ease-out, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-              background: "#2A2520",
-              border: "1px solid #4A4035",
+              background: "#0A0A0A",
+              border: "1px solid #444",
               padding: "6px 14px",
               whiteSpace: "nowrap",
-              fontFamily: "var(--font-playfair), serif",
+              fontFamily: "var(--font-space-grotesk), sans-serif",
               fontSize: "11px",
-              color: "#D8C8A8",
-              letterSpacing: "0.04em",
+              color: "#E0E0E0",
+              letterSpacing: "0.06em",
+              borderRadius: "6px",
             }}
           >
             {title}
@@ -391,10 +458,6 @@ function TileSurfaceParticles({
   const { positions, colors } = useMemo(() => {
     const pos = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
-    const base = new THREE.Color(baseColor);
-    const accent = new THREE.Color(accentColor);
-    const tmp = new THREE.Color();
-
     for (let i = 0; i < count; i++) {
       const x = (Math.random() - 0.5) * TILE_SIZE * 0.95;
       const y = (Math.random() - 0.5) * TILE_SIZE * 0.95;
@@ -403,10 +466,10 @@ function TileSurfaceParticles({
       pos[i * 3 + 1] = y;
       pos[i * 3 + 2] = z;
 
-      tmp.copy(base).lerp(accent, Math.random() * 0.6);
-      col[i * 3] = tmp.r;
-      col[i * 3 + 1] = tmp.g;
-      col[i * 3 + 2] = tmp.b;
+      const gray = 0.3 + Math.random() * 0.5;
+      col[i * 3] = gray;
+      col[i * 3 + 1] = gray;
+      col[i * 3 + 2] = gray;
     }
     return { positions: pos, colors: col };
   }, [baseColor, accentColor, depth, count]);
@@ -458,8 +521,8 @@ function AddTile({ position, onClick }: AddTileProps) {
   const [hovered, setHovered] = useState(false);
   const hoverVal = useRef(0);
 
-  const defaultColor = useMemo(() => new THREE.Color("#9A9080"), []);
-  const hoverColor = useMemo(() => new THREE.Color("#7A6850"), []);
+  const defaultColor = useMemo(() => new THREE.Color("#666666"), []);
+  const hoverColor = useMemo(() => new THREE.Color("#CCCCCC"), []);
   const lerpColor = useMemo(() => new THREE.Color(), []);
 
   useFrame((state) => {
@@ -522,7 +585,7 @@ function AddTile({ position, onClick }: AddTileProps) {
   const borderUniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uColor: { value: new THREE.Color("#9A9080") },
+      uColor: { value: new THREE.Color("#666666") },
     }),
     [],
   );
@@ -530,7 +593,7 @@ function AddTile({ position, onClick }: AddTileProps) {
   const plusUniforms = useMemo(
     () => ({
       uTime: { value: 0 },
-      uColor: { value: new THREE.Color("#9A9080") },
+      uColor: { value: new THREE.Color("#666666") },
     }),
     [],
   );
@@ -623,7 +686,7 @@ function ParticleDust({ count = 200 }: { count?: number }) {
       </bufferGeometry>
       <pointsMaterial
         size={0.006}
-        color="#8B7D5B"
+        color="#888888"
         transparent
         opacity={0.25}
         sizeAttenuation
@@ -645,6 +708,23 @@ interface GridSceneProps {
 
 export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }: GridSceneProps) {
   const groupRef = useRef<THREE.Group>(null);
+  const [previewMounted, setPreviewMounted] = useState(false);
+  const [hoverTarget, setHoverTarget] = useState<{
+    position: [number, number, number];
+    splatUrl: string;
+  } | null>(null);
+
+  const handleTileHoverStart = useCallback(
+    (position: [number, number, number], splatUrl: string) => {
+      if (!previewMounted) setPreviewMounted(true);
+      setHoverTarget({ position, splatUrl });
+    },
+    [previewMounted],
+  );
+
+  const handleTileHoverEnd = useCallback(() => {
+    setHoverTarget(null);
+  }, []);
 
   const slots = useMemo(() => {
     const result: Array<{ row: number; col: number; memory: MemoryEntry | null }> = [];
@@ -662,6 +742,11 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
     }
     return result;
   }, [memories]);
+
+  const previewSplatUrl = useMemo(
+    () => memories.find((m) => m.splatUrl)?.splatUrl ?? null,
+    [memories],
+  );
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -691,10 +776,56 @@ export default function GridScene({ memories, onNewMemoryClick, onMemoryClick }:
             depth={isFilled ? TILE_DEPTH : TILE_DEPTH_EMPTY}
             archetype={TILE_ARCHETYPES[i]}
             title={memory?.title}
+            onHoverStart={
+              memory?.splatUrl
+                ? (pos) => handleTileHoverStart(pos, memory.splatUrl!)
+                : undefined
+            }
+            onHoverEnd={memory?.splatUrl ? handleTileHoverEnd : undefined}
             onClick={memory ? () => onMemoryClick?.(memory.id) : undefined}
           />
         );
       })}
+
+      {hoverTarget && (
+        <mesh
+          position={[
+            hoverTarget.position[0],
+            hoverTarget.position[1],
+            hoverTarget.position[2] + TILE_DEPTH / 2 + 0.015,
+          ]}
+          renderOrder={-1}
+        >
+          <planeGeometry args={[TILE_SIZE, TILE_SIZE]} />
+          <meshBasicMaterial
+            colorWrite={false}
+            depthWrite={false}
+            depthTest={false}
+            stencilWrite={true}
+            stencilRef={1}
+            stencilFunc={THREE.AlwaysStencilFunc}
+            stencilFail={THREE.KeepStencilOp}
+            stencilZFail={THREE.KeepStencilOp}
+            stencilZPass={THREE.ReplaceStencilOp}
+          />
+        </mesh>
+      )}
+
+      {previewMounted && previewSplatUrl && (
+        <SplatPreview
+          url={previewSplatUrl}
+          targetPosition={
+            hoverTarget
+              ? [
+                  hoverTarget.position[0],
+                  hoverTarget.position[1],
+                  hoverTarget.position[2] + TILE_DEPTH / 2 + 0.02,
+                ]
+              : [0, 0, -1]
+          }
+          visible={!!hoverTarget}
+        />
+      )}
 
       <AddTile
         position={[(2 - 1) * TILE_GAP, (1 - 2) * TILE_GAP, TILE_ELEVATIONS[8]]}
