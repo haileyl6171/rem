@@ -122,13 +122,22 @@ def run_colmap(
         "--output_path", sparse_distorted,
         "--Mapper.ba_global_function_tolerance=0.000001",
     ])
-    model0 = os.path.join(sparse_distorted, "0")
-    if not os.path.exists(os.path.join(model0, "cameras.bin")):
+    # COLMAP can emit SEVERAL models (sparse/0, sparse/1, ...) when the video
+    # fragments — and the numbering is by CREATION ORDER, so sparse/0 is NOT
+    # guaranteed to be the biggest. Pick the model with the most registered
+    # images (largest images.bin) so we never train on a tiny fragment.
+    model_dirs = [
+        d for d in glob.glob(os.path.join(sparse_distorted, "*"))
+        if os.path.exists(os.path.join(d, "images.bin"))
+    ]
+    if not model_dirs:
         raise RuntimeError(
-            "COLMAP mapper produced no reconstruction (distorted/sparse/0 missing). "
-            "The frames likely lack overlap/parallax — use slower camera motion, "
-            "more frames, or try matcher='sequential'."
+            "COLMAP mapper produced no reconstruction (no sparse/* model). "
+            "The frames likely lack overlap/parallax — use slower camera motion "
+            "with real translation, more frames, or matcher='sequential'."
         )
+    model0 = max(model_dirs, key=lambda d: os.path.getsize(os.path.join(d, "images.bin")))
+    log.info("COLMAP produced %d model(s); using the largest: %s", len(model_dirs), model0)
 
     # 4. undistort → images/ + sparse/, then move sparse/* → sparse/0/ -------
     _run([
