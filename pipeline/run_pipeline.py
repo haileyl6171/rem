@@ -11,7 +11,7 @@ import shutil
 
 import db
 import storage
-from steps.make_prompt import make_prompt
+from steps.compose_scene import compose_scene
 from steps.generate_video import generate_video
 from steps.extract_frames import extract_frames
 from steps.colmap import run_colmap
@@ -25,11 +25,17 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
     os.makedirs(work, exist_ok=True)
 
     try:
-        # ---- GENERATE: journal → prompt → video → frames -------------------
+        # ---- GENERATE: journal → coherent prompt → video → frames ----------
         db.set_status(memory_id, "GENERATING", progress=10)
         image_paths = [storage.download(k, work) for k in input_keys]
 
-        prompt = make_prompt(description)                      # [P3] Claude
+        # Agent layer: analyze past memories (Gemini reads the new photos
+        # directly for grounding), evolve the persona, and compose a prompt that
+        # keeps this scene coherent with the person's world. Caches this memory's
+        # scene analysis for future runs. (No Pika/fal credits used here.)
+        prompt, analysis = compose_scene(description, image_paths, memory_id)
+        db.save_analysis(memory_id, analysis)
+
         video_path = generate_video(                          # [P3] Pika
             prompt, image_paths, out_path=f"{work}/generated.mp4"
         )

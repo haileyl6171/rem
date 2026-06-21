@@ -3,8 +3,8 @@
 
 modal                 # orchestration + GPU hosting + the trigger endpoint
 supabase              # DB writes (db.py) + Storage I/O (storage.py)
-anthropic             # steps/make_prompt.py — journal → video prompt
-requests              # steps/generate_video.py — call the Pika API
+google-genai          # agents/ (Gemini text + photo vision) AND veo.py (Veo 3 video generation)
+mcp                    # agents/creative.py — MCP client to the Pika MCP server (creative vision)
 fastapi               # required by @modal.fastapi_endpoint
 
 # --- reconstruction (P4) ---

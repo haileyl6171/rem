@@ -34,7 +34,8 @@ image = (
 
 # Secrets (set once):
 #   modal secret create rem-secrets SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
-#     ANTHROPIC_API_KEY=... PIKA_API_KEY=... MODAL_SECRET=...
+#     GEMINI_API_KEY=... MODAL_SECRET=...
+#   (video generation, when enabled: add VEO_ENABLED=1 — Veo 3 reuses GEMINI_API_KEY)
 secrets = [modal.Secret.from_name("rem-secrets")]
 
 
