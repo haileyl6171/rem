@@ -725,6 +725,64 @@ export default function IngestScreen({
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  const toggleVoice = useCallback(() => {
+    setVoiceError(null);
+
+    if (isListening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SpeechRecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+      setVoiceError("Voice input is not supported in this browser");
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      let transcript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        if (event.results[i].isFinal) {
+          transcript += event.results[i][0].transcript;
+        }
+      }
+      if (transcript) {
+        setDescription((prev) => (prev ? prev + " " + transcript.trim() : transcript.trim()));
+      }
+    };
+
+    recognition.onerror = (event: Event & { error?: string }) => {
+      setIsListening(false);
+      const code = event.error ?? "unknown";
+      if (code === "aborted") return;
+      if (code === "not-allowed") {
+        setVoiceError("Microphone access denied — check browser permissions");
+      } else if (code === "no-speech") {
+        setVoiceError("No speech detected — try again");
+      } else {
+        setVoiceError(`Voice error: ${code}`);
+      }
+    };
+
+    recognition.onend = () => setIsListening(false);
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+      setIsListening(true);
+    } catch (err) {
+      setVoiceError("Could not start voice input — check microphone permissions");
+    }
+  }, [isListening]);
 
   const handleNewMemory = useCallback(() => {
     if (onNewMemoryClick) {
@@ -751,10 +809,12 @@ export default function IngestScreen({
   }, []);
 
   const handleCloseForm = useCallback(() => {
+    recognitionRef.current?.stop();
     previews.forEach((url) => URL.revokeObjectURL(url));
     setPreviews([]);
     setImageFiles([]);
     setDescription("");
+    setVoiceError(null);
     setShowForm(false);
   }, [previews]);
 
@@ -838,16 +898,50 @@ export default function IngestScreen({
         <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#2A2520]/80 backdrop-blur-sm">
           <div className="pointer-events-auto w-full max-w-md border border-[#4A4035] bg-[#332E28] p-8">
             {/* Optional text description */}
-            <label className="mb-2 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
-              Describe the scene (optional)
-            </label>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
+                Describe the scene (optional)
+              </label>
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className={[
+                  "flex h-7 w-7 items-center justify-center rounded-full transition-all",
+                  isListening
+                    ? "animate-pulse bg-[#C86B3C] text-white"
+                    : "bg-[#3D3830] text-[#9A8B7A] hover:bg-[#4A4035] hover:text-[#D8C8A8]",
+                ].join(" ")}
+                title={isListening ? "Stop recording" : "Voice input"}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-3.5 w-3.5"
+                >
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" x2="12" y1="19" y2="22" />
+                </svg>
+              </button>
+            </div>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="A sun-drenched afternoon in a quiet garden..."
+              placeholder={isListening ? "Listening..." : "A sun-drenched afternoon in a quiet garden..."}
               rows={2}
-              className="mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]"
+              className={[
+                "mb-6 w-full resize-none border-none bg-[#3D3830] px-5 py-4 text-sm leading-relaxed text-[#D8C8A8] placeholder-[#6A5E50] transition-all focus:outline-none focus:ring-1 focus:ring-[#C86B3C]",
+                isListening ? "ring-1 ring-[#C86B3C]/50" : "",
+              ].join(" ")}
             />
+            {voiceError && (
+              <p className="-mt-4 mb-4 text-[10px] text-[#C86B3C]">{voiceError}</p>
+            )}
 
             {/* Photo upload — mandatory */}
             <label className="mb-3 block text-[10px] tracking-[0.2em] text-[#9A8B7A] uppercase">
