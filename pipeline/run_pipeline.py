@@ -57,7 +57,10 @@ def run_pipeline(memory_id: str, input_keys: list[str], description: str) -> Non
         db.set_status(memory_id, "RECONSTRUCTING", progress=40)
         colmap_dir = run_colmap(
             frames_dir, os.path.join(work, "colmap"),
-            matcher="sequential", sift_use_gpu=False,
+            matcher="sequential",
+            # GPU SIFT runs headless on a CUDA COLMAP build (no display needed) —
+            # the Modal image must install the conda-forge cuda-* colmap build.
+            sift_use_gpu=True,
         )
 
         # ---- TRAIN → export → upload --------------------------------------

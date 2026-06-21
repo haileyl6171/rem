@@ -54,6 +54,25 @@ python pipeline/reconstruct_local.py --images ./my_photos --out ./out
 > to `out/scene.ply` — **always view `scene.ply`** (or that `point_cloud_*.ply`), never a
 > stale leftover.
 
+## GPU & speed
+
+COLMAP already uses the GPU for the parts that can: **feature extraction + matching**
+run on CUDA, and that works **headless** (no display) on a CUDA build — check yours
+with `conda list colmap` (build string contains `cuda`) and
+`colmap feature_extractor --help | grep use_gpu` (defaults to `=1`). These were never
+the bottleneck.
+
+The slow stage is the **incremental mapper** (pose solving / bundle adjustment), which
+is **CPU-bound** — GPU doesn't help it (BA only uses the GPU if Ceres is built with
+CUDA+cuDSS, which the stock binaries aren't). To cut wall-clock:
+
+- **`--sfm global`** → COLMAP's `global_mapper` (GLOMAP), **1–2 orders of magnitude
+  faster** on many-frame captures. Needs **COLMAP 4.x** (3.13 logs a warning and falls
+  back to incremental) and decent focal priors. Get it in a fresh env:
+  `conda install -c conda-forge "colmap=4.*=*cuda*"`.
+- fewer frames (`--fps 8`), or `--matcher sequential` for ordered video (much cheaper
+  than exhaustive's O(N²)).
+
 ## What "good" looks like
 
 - COLMAP registers **most** of your frames into **one** model. The mapper log shows

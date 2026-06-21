@@ -51,13 +51,37 @@ def _supports(colmap_bin: str, command: str, option: str) -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=None)
+def _has_subcommand(colmap_bin: str, command: str) -> bool:
+    """True if this COLMAP build offers <command> (e.g. global_mapper — 4.x only)."""
+    try:
+        r = subprocess.run([colmap_bin, "help"], capture_output=True, text=True)
+        return command in (r.stdout + r.stderr)
+    except Exception:
+        return False
+
+
+def _gpu_opt(colmap_bin: str, command: str, candidates: list[str], value: str) -> list[str]:
+    """Return [flag, value] using whichever GPU-toggle name this build advertises.
+    The name changed across versions: newer COLMAP uses --FeatureExtraction /
+    --FeatureMatching.use_gpu, older uses --SiftExtraction / --SiftMatching.use_gpu.
+    Probing means a CUDA build actually gets the flag (and --no-gpu actually works)
+    instead of us silently passing an unknown option and falling back to a default."""
+    for opt in candidates:
+        if _supports(colmap_bin, command, opt):
+            return [opt, value]
+    log.info("COLMAP advertises none of %s; leaving GPU at its build default", candidates)
+    return []
+
+
 def run_colmap(
     frames_dir: str,
     work_dir: str,
     *,
     camera_model: str = "OPENCV",
     matcher: str = "exhaustive",  # "exhaustive" (robust) | "sequential" (fast, ordered video)
-    sift_use_gpu: bool = True,    # set False on headless boxes w/o an X/EGL context (e.g. Modal)
+    sfm: str = "incremental",     # "incremental" (robust) | "global" (GLOMAP, ~10-50x faster, COLMAP 4.x only)
+    sift_use_gpu: bool = True,    # GPU SIFT runs headless on a CUDA COLMAP build (no X/display needed)
     colmap_bin: str = "colmap",
 ) -> str:
     """
@@ -96,10 +120,8 @@ def run_colmap(
         "--ImageReader.single_camera", "1",
         "--ImageReader.camera_model", camera_model,
     ]
-    if _supports(colmap_bin, "feature_extractor", "--SiftExtraction.use_gpu"):
-        feat_cmd += ["--SiftExtraction.use_gpu", use_gpu]
-    else:
-        log.info("COLMAP build lacks --SiftExtraction.use_gpu; using its default (CPU/VLFeat SIFT)")
+    feat_cmd += _gpu_opt(colmap_bin, "feature_extractor",
+                         ["--FeatureExtraction.use_gpu", "--SiftExtraction.use_gpu"], use_gpu)
     _run(feat_cmd)
 
     # 2. feature matching ----------------------------------------------------
@@ -108,20 +130,37 @@ def run_colmap(
         "sequential": "sequential_matcher",
     }[matcher]
     match_cmd = [colmap_bin, matcher_cmd, "--database_path", db]
-    if _supports(colmap_bin, matcher_cmd, "--SiftMatching.use_gpu"):
-        match_cmd += ["--SiftMatching.use_gpu", use_gpu]
+    match_cmd += _gpu_opt(colmap_bin, matcher_cmd,
+                          ["--FeatureMatching.use_gpu", "--SiftMatching.use_gpu"], use_gpu)
     _run(match_cmd)
 
     # 3. sparse reconstruction (SfM) → distorted/sparse/0 --------------------
+    #    incremental = COLMAP's classic image-by-image mapper (robust, CPU-bound,
+    #    the slow part of a big run). global = GLOMAP, merged into COLMAP 4.x as
+    #    `global_mapper`: 1-2 orders of magnitude faster on many-frame captures,
+    #    but needs decent focal priors. GPU does NOT materially speed up either
+    #    (bundle adjustment is CPU unless Ceres is built with CUDA+cuDSS).
     sparse_distorted = os.path.join(distorted, "sparse")
     os.makedirs(sparse_distorted, exist_ok=True)
-    _run([
-        colmap_bin, "mapper",
-        "--database_path", db,
-        "--image_path", inp,
-        "--output_path", sparse_distorted,
-        "--Mapper.ba_global_function_tolerance=0.000001",
-    ])
+    use_global = sfm == "global" and _has_subcommand(colmap_bin, "global_mapper")
+    if sfm == "global" and not use_global:
+        log.warning("sfm='global' requested but this COLMAP build has no global_mapper "
+                    "(needs 4.x) — falling back to the incremental mapper.")
+    if use_global:
+        _run([
+            colmap_bin, "global_mapper",
+            "--database_path", db,
+            "--image_path", inp,
+            "--output_path", sparse_distorted,
+        ])
+    else:
+        _run([
+            colmap_bin, "mapper",
+            "--database_path", db,
+            "--image_path", inp,
+            "--output_path", sparse_distorted,
+            "--Mapper.ba_global_function_tolerance=0.000001",
+        ])
     # COLMAP can emit SEVERAL models (sparse/0, sparse/1, ...) when the video
     # fragments — and the numbering is by CREATION ORDER, so sparse/0 is NOT
     # guaranteed to be the biggest. Pick the model with the most registered

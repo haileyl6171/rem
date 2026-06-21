@@ -43,8 +43,10 @@ def main() -> None:
     ap.add_argument("--max-steps", type=int, default=7000, help="gsplat training iterations")
     ap.add_argument("--matcher", choices=["exhaustive", "sequential"], default=None,
                     help="default: sequential for --video, exhaustive for --images")
+    ap.add_argument("--sfm", choices=["incremental", "global"], default="incremental",
+                    help="incremental (robust default) | global (GLOMAP, ~10-50x faster; needs COLMAP 4.x)")
     ap.add_argument("--no-gpu-colmap", action="store_true",
-                    help="CPU SIFT (headless boxes; also our conda COLMAP has no GPU SIFT)")
+                    help="force CPU SIFT (GPU SIFT otherwise runs headless on a CUDA colmap build)")
     args = ap.parse_args()
 
     log = logging.getLogger("reconstruct")
@@ -67,7 +69,8 @@ def main() -> None:
     # ---- COLMAP → gsplat → export -----------------------------------------
     log.info("[2/4] COLMAP (matcher=%s) …", matcher)
     colmap_dir = run_colmap(frames_dir, os.path.join(out, "colmap"),
-                            matcher=matcher, sift_use_gpu=not args.no_gpu_colmap)
+                            matcher=matcher, sfm=args.sfm,
+                            sift_use_gpu=not args.no_gpu_colmap)
 
     log.info("[3/4] gsplat training (%d steps) …", args.max_steps)
     ply = train_gsplat(frames_dir, colmap_dir, os.path.join(out, "gsplat"),
